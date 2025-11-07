@@ -1,0 +1,11 @@
+{
+    "name": "hiblaphp/stream",
+    "type": "library",
+    "license": "MIT",
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "require": {
+        "hiblaphp/event-loop": "dev-main",
+        "hiblaphp/promise": "dev-main"
+    }
+}
