@@ -1,5 +1,5 @@
 {
-    "name": "hiblaphp/stream",
+    "name": "hibla/stream",
     "type": "library",
     "license": "MIT",
     "minimum-stability": "dev",
@@ -7,5 +7,26 @@
     "require": {
         "hiblaphp/event-loop": "dev-main",
         "hiblaphp/promise": "dev-main"
+    },
+    "autoload": {
+        "psr-4": {
+            "Hibla\\Stream\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "require-dev": {
+        "pestphp/pest": "3.0"
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/pest"
     }
 }

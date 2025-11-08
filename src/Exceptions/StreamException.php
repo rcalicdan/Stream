@@ -1,12 +1,12 @@
 <?php
 
-namespace Hibla\Stream\Stream\Exceptions;
+namespace Hibla\Stream\Exceptions;
 
-use Exception;
+use RuntimeException;
 
 /**
  * Base exception for stream-related errors.
  */
-class StreamException extends Exception
+class StreamException extends RuntimeException
 {
 }

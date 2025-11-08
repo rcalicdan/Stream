@@ -1,6 +1,6 @@
 <?php
 
-namespace Hibla\Stream\Stream\Exceptions;
+namespace Hibla\Stream\Exceptions;
 
 /**
  * Exception thrown when stream operations time out.
