@@ -54,9 +54,21 @@ class WritableStream implements WritableStreamInterface
         $this->resource = $resource;
         $this->softLimit = $softLimit;
 
-        // Set non-blocking mode
-        if (!stream_set_blocking($resource, false)) {
-            throw new StreamException('Failed to set non-blocking mode');
+        $streamType = $meta['stream_type'] ?? '';
+        $isWindows = DIRECTORY_SEPARATOR === '\\' || stripos(PHP_OS, 'WIN') === 0;
+
+        $shouldSetNonBlocking = false;
+
+        if (in_array($streamType, ['tcp_socket', 'udp_socket', 'unix_socket', 'ssl_socket', 'TCP/IP', 'tcp_socket/ssl'])) {
+            $shouldSetNonBlocking = true;
+        }
+      
+        elseif (!$isWindows && in_array($streamType, ['STDIO', 'PLAINFILE', 'TEMP', 'MEMORY'])) {
+            $shouldSetNonBlocking = true;
+        }
+
+        if ($shouldSetNonBlocking) {
+            @stream_set_blocking($resource, false);
         }
     }
 
@@ -78,7 +90,7 @@ class WritableStream implements WritableStreamInterface
                 'resolve' => $resolve,
                 'reject' => $reject,
                 'bytes' => $bytesToWrite,
-                'promise' => null, // Will be set after creation
+                'promise' => null, 
             ];
 
             $this->writeQueue[] = &$queueItem;
@@ -86,10 +98,8 @@ class WritableStream implements WritableStreamInterface
             $this->startWriting();
         });
 
-        // Set the promise reference in the queue item
         $this->writeQueue[array_key_last($this->writeQueue)]['promise'] = $promise;
 
-        // Set cancel handler
         $promise->setCancelHandler(function () use ($promise) {
             $this->cancelWrite($promise);
         });

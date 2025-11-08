@@ -1,6 +1,6 @@
 <?php
 
-use Hibla\EventLoop\EventLoop;
+use Hibla\EventLoop\Loop;
 
 /*
 |--------------------------------------------------------------------------
@@ -9,8 +9,13 @@ use Hibla\EventLoop\EventLoop;
 */
 
 uses()->beforeEach(function () {
-    EventLoop::reset();
-})->in('Feature');
+    // Ensure clean state before each test
+})->in('Unit', 'Feature');
+
+uses()->afterEach(function () {
+    // Clean up after each test
+    Loop::stop();
+})->in('Unit', 'Feature');
 
 /*
 |--------------------------------------------------------------------------
@@ -28,11 +33,18 @@ expect()->extend('toBeResource', function () {
 |--------------------------------------------------------------------------
 */
 
-function cleanupTestFiles(array $files): void
+function createTempFile(string $content = ''): string
 {
-    foreach ($files as $file) {
-        if (file_exists($file)) {
-            @unlink($file);
-        }
+    $file = tempnam(sys_get_temp_dir(), 'stream_test_');
+    if ($content) {
+        file_put_contents($file, $content);
+    }
+    return $file;
+}
+
+function cleanupTempFile(string $file): void
+{
+    if (file_exists($file)) {
+        @unlink($file);
     }
 }

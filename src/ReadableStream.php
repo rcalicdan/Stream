@@ -39,7 +39,6 @@ class ReadableStream implements ReadableStreamInterface
             throw new StreamException('Invalid resource provided');
         }
 
-        // Verify resource can be read
         $meta = stream_get_meta_data($resource);
         if (!str_contains($meta['mode'], 'r') && !str_contains($meta['mode'], '+')) {
             throw new StreamException('Resource is not readable');
@@ -48,13 +47,23 @@ class ReadableStream implements ReadableStreamInterface
         $this->resource = $resource;
         $this->chunkSize = $chunkSize;
 
-        // Set non-blocking mode
-        if (!stream_set_blocking($resource, false)) {
-            throw new StreamException('Failed to set non-blocking mode');
+        $streamType = $meta['stream_type'] ?? '';
+        $isWindows = DIRECTORY_SEPARATOR === '\\' || stripos(PHP_OS, 'WIN') === 0;
+
+        $shouldSetNonBlocking = false;
+
+        if (in_array($streamType, ['tcp_socket', 'udp_socket', 'unix_socket', 'ssl_socket', 'TCP/IP', 'tcp_socket/ssl'])) {
+            $shouldSetNonBlocking = true;
+        }
+       
+        elseif (!$isWindows && in_array($streamType, ['STDIO', 'PLAINFILE', 'TEMP', 'MEMORY'])) {
+            $shouldSetNonBlocking = true;
         }
 
-        // Disable read buffer for better event loop integration
-        stream_set_read_buffer($resource, 0);
+        if ($shouldSetNonBlocking) {
+            @stream_set_blocking($resource, false);
+            @stream_set_read_buffer($resource, 0);
+        }
     }
 
     public function read(?int $length = null): CancellablePromiseInterface
