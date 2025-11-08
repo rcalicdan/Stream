@@ -74,29 +74,26 @@ class ReadableStream implements ReadableStreamInterface
             return $this->createResolvedCancellable(null);
         }
 
-        $promise = new CancellablePromise(function ($resolve, $reject) use ($length) {
-            $queueItem = [
-                'resolve' => $resolve,
-                'reject' => $reject,
-                'length' => $length ?? $this->chunkSize,
-                'promise' => null, // Will be set after creation
-            ];
+        $promise = new CancellablePromise();
 
-            $this->readQueue[] = &$queueItem;
+        $queueItem = [
+            'resolve' => fn($value) => $promise->resolve($value),
+            'reject' => fn($reason) => $promise->reject($reason),
+            'length' => $length ?? $this->chunkSize,
+            'promise' => $promise,
+        ];
 
-            // Start reading if not already
-            if ($this->paused) {
-                $this->resume();
-            }
-        });
-
-        // Set the promise reference in the queue item
-        $this->readQueue[array_key_last($this->readQueue)]['promise'] = $promise;
+        $this->readQueue[] = $queueItem;
 
         // Set cancel handler
         $promise->setCancelHandler(function () use ($promise) {
             $this->cancelRead($promise);
         });
+
+        // Start reading if not already
+        if ($this->paused) {
+            $this->resume();
+        }
 
         return $promise;
     }
@@ -112,78 +109,81 @@ class ReadableStream implements ReadableStreamInterface
         }
 
         $maxLen = $maxLength ?? $this->chunkSize;
+        $promise = new CancellablePromise();
 
-        $promise = new CancellablePromise(function ($resolve, $reject) use ($maxLen) {
-            // Check if we already have a line in buffer
-            $newlinePos = strpos($this->buffer, "\n");
-            if ($newlinePos !== false) {
-                $line = substr($this->buffer, 0, $newlinePos + 1);
-                $this->buffer = substr($this->buffer, $newlinePos + 1);
-                $resolve($line);
+        // Check if we already have a line in buffer
+        $newlinePos = strpos($this->buffer, "\n");
+        if ($newlinePos !== false) {
+            $line = substr($this->buffer, 0, $newlinePos + 1);
+            $this->buffer = substr($this->buffer, $newlinePos + 1);
+            $promise->resolve($line);
+            return $promise;
+        }
+
+        // Check if buffer exceeds max length
+        if (strlen($this->buffer) >= $maxLen) {
+            $line = substr($this->buffer, 0, $maxLen);
+            $this->buffer = substr($this->buffer, $maxLen);
+            $promise->resolve($line);
+            return $promise;
+        }
+
+        // Need to read more data
+        $lineBuffer = $this->buffer;
+        $this->buffer = '';
+        $cancelled = false;
+
+        $readMore = function () use ($promise, $maxLen, &$lineBuffer, &$readMore, &$cancelled) {
+            if ($cancelled) {
                 return;
             }
 
-            // Check if buffer exceeds max length
-            if (strlen($this->buffer) >= $maxLen) {
-                $line = substr($this->buffer, 0, $maxLen);
-                $this->buffer = substr($this->buffer, $maxLen);
-                $resolve($line);
-                return;
-            }
-
-            // Need to read more data
-            $lineBuffer = $this->buffer;
-            $this->buffer = '';
-            $cancelled = false;
-
-            $readMore = function () use ($resolve, $reject, $maxLen, &$lineBuffer, &$readMore, &$cancelled) {
+            $this->read(1024)->then(function ($data) use ($promise, $maxLen, &$lineBuffer, &$readMore, &$cancelled) {
                 if ($cancelled) {
                     return;
                 }
 
-                $this->read(1024)->then(function ($data) use ($resolve, $reject, $maxLen, &$lineBuffer, &$readMore, &$cancelled) {
-                    if ($cancelled) {
-                        return;
-                    }
+                if ($data === null) {
+                    // EOF reached
+                    $promise->resolve($lineBuffer === '' ? null : $lineBuffer);
+                    return;
+                }
 
-                    if ($data === null) {
-                        // EOF reached
-                        $resolve($lineBuffer === '' ? null : $lineBuffer);
-                        return;
-                    }
+                $lineBuffer .= $data;
 
-                    $lineBuffer .= $data;
+                // Check for newline
+                $newlinePos = strpos($lineBuffer, "\n");
+                if ($newlinePos !== false) {
+                    $line = substr($lineBuffer, 0, $newlinePos + 1);
+                    $remaining = substr($lineBuffer, $newlinePos + 1);
+                    $this->buffer = $remaining . $this->buffer;
+                    $promise->resolve($line);
+                    return;
+                }
 
-                    // Check for newline
-                    $newlinePos = strpos($lineBuffer, "\n");
-                    if ($newlinePos !== false) {
-                        $line = substr($lineBuffer, 0, $newlinePos + 1);
-                        $remaining = substr($lineBuffer, $newlinePos + 1);
-                        $this->buffer = $remaining . $this->buffer;
-                        $resolve($line);
-                        return;
-                    }
+                // Check if exceeded max length
+                if (strlen($lineBuffer) >= $maxLen) {
+                    $line = substr($lineBuffer, 0, $maxLen);
+                    $remaining = substr($lineBuffer, $maxLen);
+                    $this->buffer = $remaining . $this->buffer;
+                    $promise->resolve($line);
+                    return;
+                }
 
-                    // Check if exceeded max length
-                    if (strlen($lineBuffer) >= $maxLen) {
-                        $line = substr($lineBuffer, 0, $maxLen);
-                        $remaining = substr($lineBuffer, $maxLen);
-                        $this->buffer = $remaining . $this->buffer;
-                        $resolve($line);
-                        return;
-                    }
+                // Continue reading
+                $readMore();
+            })->catch(function ($error) use ($promise, &$cancelled) {
+                if (!$cancelled) {
+                    $promise->reject($error);
+                }
+            });
+        };
 
-                    // Continue reading
-                    $readMore();
-                })->catch(function ($error) use ($reject, &$cancelled) {
-                    if (!$cancelled) {
-                        $reject($error);
-                    }
-                });
-            };
-
-            $readMore();
+        $promise->setCancelHandler(function () use (&$cancelled) {
+            $cancelled = true;
         });
+
+        $readMore();
 
         return $promise;
     }
@@ -194,44 +194,47 @@ class ReadableStream implements ReadableStreamInterface
             return $this->createRejectedCancellable(new StreamException('Stream is not readable'));
         }
 
-        $promise = new CancellablePromise(function ($resolve, $reject) use ($maxLength) {
-            $buffer = $this->buffer;
-            $this->buffer = '';
-            $cancelled = false;
+        $promise = new CancellablePromise();
+        $buffer = $this->buffer;
+        $this->buffer = '';
+        $cancelled = false;
 
-            $readMore = function () use ($resolve, $reject, $maxLength, &$buffer, &$readMore, &$cancelled) {
-                if ($cancelled) {
-                    return;
-                }
+        $readMore = function () use ($promise, $maxLength, &$buffer, &$readMore, &$cancelled) {
+            if ($cancelled) {
+                return;
+            }
 
-                if (strlen($buffer) >= $maxLength) {
-                    $resolve($buffer);
-                    return;
-                }
+            if (strlen($buffer) >= $maxLength) {
+                $promise->resolve($buffer);
+                return;
+            }
 
-                $this->read(min($this->chunkSize, $maxLength - strlen($buffer)))->then(
-                    function ($data) use ($resolve, $maxLength, &$buffer, &$readMore, &$cancelled) {
-                        if ($cancelled) {
-                            return;
-                        }
-
-                        if ($data === null) {
-                            $resolve($buffer);
-                            return;
-                        }
-
-                        $buffer .= $data;
-                        $readMore();
+            $this->read(min($this->chunkSize, $maxLength - strlen($buffer)))->then(
+                function ($data) use ($promise, $maxLength, &$buffer, &$readMore, &$cancelled) {
+                    if ($cancelled) {
+                        return;
                     }
-                )->catch(function ($error) use ($reject, &$cancelled) {
-                    if (!$cancelled) {
-                        $reject($error);
-                    }
-                });
-            };
 
-            $readMore();
+                    if ($data === null) {
+                        $promise->resolve($buffer);
+                        return;
+                    }
+
+                    $buffer .= $data;
+                    $readMore();
+                }
+            )->catch(function ($error) use ($promise, &$cancelled) {
+                if (!$cancelled) {
+                    $promise->reject($error);
+                }
+            });
+        };
+
+        $promise->setCancelHandler(function () use (&$cancelled) {
+            $cancelled = true;
         });
+
+        $readMore();
 
         return $promise;
     }
@@ -243,76 +246,93 @@ class ReadableStream implements ReadableStreamInterface
         }
 
         if (!$destination->isWritable()) {
-            $this->pause();
             return $this->createRejectedCancellable(new StreamException('Destination is not writable'));
         }
 
         $endDestination = $options['end'] ?? true;
         $totalBytes = 0;
+        $cancelled = false;
 
-        $promise = new CancellablePromise(function ($resolve, $reject) use ($destination, $endDestination, &$totalBytes) {
-            $cancelled = false;
+        // Deferred promise pattern
+        $promise = new CancellablePromise();
 
-            $dataHandler = function ($data) use ($destination, &$totalBytes, &$cancelled) {
-                if ($cancelled) {
-                    return;
-                }
+        $dataHandler = null;
+        $endHandler = null;
+        $errorHandler = null;
+        $closeHandler = null;
 
-                $destination->write($data)->then(function ($bytes) use (&$totalBytes) {
-                    $totalBytes += $bytes;
-                })->catch(function ($error) use (&$cancelled) {
-                    if (!$cancelled) {
-                        $this->emit('error', $error);
-                    }
-                });
-            };
+        $dataHandler = function ($data) use ($destination, &$totalBytes, &$cancelled) {
+            if ($cancelled) {
+                return;
+            }
 
-            $endHandler = function () use ($destination, $endDestination, $resolve, &$totalBytes, $dataHandler, &$cancelled) {
-                if ($cancelled) {
-                    return;
-                }
-
-                $this->off('data', $dataHandler);
-
-                if ($endDestination) {
-                    $destination->end()->then(function () use ($resolve, &$totalBytes) {
-                        $resolve($totalBytes);
-                    })->catch(function ($error) use ($resolve, &$totalBytes) {
-                        $resolve($totalBytes); // Resolve anyway with bytes transferred
-                    });
-                } else {
-                    $resolve($totalBytes);
-                }
-            };
-
-            $errorHandler = function ($error) use ($reject, $dataHandler, $endHandler, &$cancelled) {
-                if ($cancelled) {
-                    return;
-                }
-
-                $this->off('data', $dataHandler);
-                $this->off('end', $endHandler);
-                $reject($error);
-            };
-
-            $closeHandler = function () use ($destination, &$cancelled) {
+            $destination->write($data)->then(function ($bytes) use (&$totalBytes) {
+                $totalBytes += $bytes;
+            })->catch(function ($error) use (&$cancelled) {
                 if (!$cancelled) {
-                    $destination->close();
+                    $this->emit('error', $error);
                 }
-            };
+            });
+        };
 
-            $this->on('data', $dataHandler);
-            $this->on('end', $endHandler);
-            $this->on('error', $errorHandler);
-            $destination->on('close', $closeHandler);
+        $endHandler = function () use ($promise, $destination, $endDestination, &$totalBytes, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler, &$cancelled) {
+            if ($cancelled) {
+                return;
+            }
 
-            $this->resume();
-        });
+            $this->off('data', $dataHandler);
+            $this->off('end', $endHandler);
+            $this->off('error', $errorHandler);
+            $destination->off('close', $closeHandler);
+
+            if ($endDestination) {
+                $destination->end()->then(function () use ($promise, &$totalBytes) {
+                    $promise->resolve($totalBytes);
+                })->catch(function ($error) use ($promise, &$totalBytes) {
+                    $promise->resolve($totalBytes); // Resolve anyway with bytes transferred
+                });
+            } else {
+                $promise->resolve($totalBytes);
+            }
+        };
+
+        $errorHandler = function ($error) use ($promise, $destination, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler, &$cancelled) {
+            if ($cancelled) {
+                return;
+            }
+
+            $this->off('data', $dataHandler);
+            $this->off('end', $endHandler);
+            $this->off('error', $errorHandler);
+            $destination->off('close', $closeHandler);
+            $promise->reject($error);
+        };
+
+        $closeHandler = function () use ($destination, &$cancelled) {
+            if (!$cancelled) {
+                $destination->close();
+            }
+        };
+
+        $this->on('data', $dataHandler);
+        $this->on('end', $endHandler);
+        $this->on('error', $errorHandler);
+        $destination->on('close', $closeHandler);
 
         // Set cancel handler
-        $promise->setCancelHandler(function () {
+        $promise->setCancelHandler(function () use (&$cancelled, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler, $destination) {
+            $cancelled = true;
             $this->pause();
+
+            // Clean up listeners
+            $this->off('data', $dataHandler);
+            $this->off('end', $endHandler);
+            $this->off('error', $errorHandler);
+            $destination->off('close', $closeHandler);
         });
+
+        // Start reading
+        $this->resume();
 
         return $promise;
     }
@@ -486,19 +506,15 @@ class ReadableStream implements ReadableStreamInterface
 
     private function createResolvedCancellable(mixed $value): CancellablePromiseInterface
     {
-        $promise = new CancellablePromise(function ($resolve) use ($value) {
-            $resolve($value);
-        });
-
+        $promise = new CancellablePromise();
+        $promise->resolve($value);
         return $promise;
     }
 
     private function createRejectedCancellable(\Throwable $reason): CancellablePromiseInterface
     {
-        $promise = new CancellablePromise(function ($resolve, $reject) use ($reason) {
-            $reject($reason);
-        });
-
+        $promise = new CancellablePromise();
+        $promise->reject($reason);
         return $promise;
     }
 

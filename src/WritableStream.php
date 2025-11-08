@@ -84,27 +84,25 @@ class WritableStream implements WritableStreamInterface
             return $this->createResolvedCancellable(0);
         }
 
-        $promise = new CancellablePromise(function ($resolve, $reject) use ($data) {
-            $this->writeBuffer .= $data;
-            $bytesToWrite = strlen($data);
+        $promise = new CancellablePromise();
+        
+        $this->writeBuffer .= $data;
+        $bytesToWrite = strlen($data);
 
-            $queueItem = [
-                'resolve' => $resolve,
-                'reject' => $reject,
-                'bytes' => $bytesToWrite,
-                'promise' => null,
-            ];
+        $queueItem = [
+            'resolve' => fn($value) => $promise->resolve($value),
+            'reject' => fn($reason) => $promise->reject($reason),
+            'bytes' => $bytesToWrite,
+            'promise' => $promise,
+        ];
 
-            $this->writeQueue[] = &$queueItem;
-
-            $this->startWriting();
-        });
-
-        $this->writeQueue[array_key_last($this->writeQueue)]['promise'] = $promise;
+        $this->writeQueue[] = $queueItem;
 
         $promise->setCancelHandler(function () use ($promise) {
             $this->cancelWrite($promise);
         });
+
+        $this->startWriting();
 
         return $promise;
     }
@@ -121,39 +119,34 @@ class WritableStream implements WritableStreamInterface
         }
 
         $this->ending = true;
+        $promise = new CancellablePromise();
 
-        $promise = new CancellablePromise(function ($resolve, $reject) use ($data) {
-            $writePromise = null;
+        $finish = function () use ($promise) {
+            $this->writable = false;
 
-            if ($data !== null && $data !== '') {
-                $writePromise = $this->write($data);
-            }
+            $this->waitForDrain()->then(function () use ($promise) {
+                $this->emit('finish');
+                $this->close();
+                $promise->resolve(null);
+            })->catch(function ($error) use ($promise) {
+                $this->emit('error', $error);
+                $this->close();
+                $promise->reject($error);
+            });
+        };
 
-            $finish = function () use ($resolve, $reject) {
-                $this->writable = false;
-
-                $this->waitForDrain()->then(function () use ($resolve) {
-                    $this->emit('finish');
-                    $this->close();
-                    $resolve(null);
-                })->catch(function ($error) use ($reject) {
-                    $this->emit('error', $error);
-                    $this->close();
-                    $reject($error);
-                });
-            };
-
-            if ($writePromise !== null) {
-                $writePromise->then($finish)->catch(function ($error) use ($reject) {
-                    $this->writable = false;
-                    $this->emit('error', $error);
-                    $this->close();
-                    $reject($error);
-                });
-            } else {
+        if ($data !== null && $data !== '') {
+            $this->write($data)->then(function() use ($finish) {
                 $finish();
-            }
-        });
+            })->catch(function ($error) use ($promise) {
+                $this->writable = false;
+                $this->emit('error', $error);
+                $this->close();
+                $promise->reject($error);
+            });
+        } else {
+            $finish();
+        }
 
         return $promise;
     }
@@ -222,7 +215,8 @@ class WritableStream implements WritableStreamInterface
 
     private function handleWritable(): void
     {
-        if (!$this->writable || $this->writeBuffer === '') {
+        // Allow writes while ending, but not if already closed or not writable and not ending
+        if ((!$this->writable && !$this->ending) || $this->writeBuffer === '') {
             return;
         }
 
@@ -314,40 +308,44 @@ class WritableStream implements WritableStreamInterface
             return $this->createResolvedCancellable(null);
         }
 
-        $promise = new CancellablePromise(function ($resolve, $reject) {
-            $drainHandler = null;
-            $errorHandler = null;
-            $cancelled = false;
+        $promise = new CancellablePromise();
+        $cancelled = false;
 
-            $drainHandler = function () use ($resolve, &$drainHandler, &$errorHandler, &$cancelled) {
-                if ($cancelled) {
-                    return;
-                }
+        $drainHandler = null;
+        $errorHandler = null;
 
-                $this->off('drain', $drainHandler);
-                $this->off('error', $errorHandler);
-                $resolve(null);
-            };
-
-            $errorHandler = function ($error) use ($reject, &$drainHandler, &$errorHandler, &$cancelled) {
-                if ($cancelled) {
-                    return;
-                }
-
-                $this->off('drain', $drainHandler);
-                $this->off('error', $errorHandler);
-                $reject($error);
-            };
-
-            $this->on('drain', $drainHandler);
-            $this->on('error', $errorHandler);
-
-            // If buffer is already empty, resolve immediately
-            if ($this->writeBuffer === '') {
-                $this->off('drain', $drainHandler);
-                $this->off('error', $errorHandler);
-                $resolve(null);
+        $drainHandler = function () use ($promise, &$drainHandler, &$errorHandler, &$cancelled) {
+            if ($cancelled) {
+                return;
             }
+
+            $this->off('drain', $drainHandler);
+            $this->off('error', $errorHandler);
+            $promise->resolve(null);
+        };
+
+        $errorHandler = function ($error) use ($promise, &$drainHandler, &$errorHandler, &$cancelled) {
+            if ($cancelled) {
+                return;
+            }
+
+            $this->off('drain', $drainHandler);
+            $this->off('error', $errorHandler);
+            $promise->reject($error);
+        };
+
+        $this->on('drain', $drainHandler);
+        $this->on('error', $errorHandler);
+
+        // If buffer is already empty, resolve immediately
+        if ($this->writeBuffer === '') {
+            $this->off('drain', $drainHandler);
+            $this->off('error', $errorHandler);
+            $promise->resolve(null);
+        }
+
+        $promise->setCancelHandler(function () use (&$cancelled) {
+            $cancelled = true;
         });
 
         return $promise;
@@ -355,19 +353,15 @@ class WritableStream implements WritableStreamInterface
 
     private function createResolvedCancellable(mixed $value): CancellablePromiseInterface
     {
-        $promise = new CancellablePromise(function ($resolve) use ($value) {
-            $resolve($value);
-        });
-
+        $promise = new CancellablePromise();
+        $promise->resolve($value);
         return $promise;
     }
 
     private function createRejectedCancellable(\Throwable $reason): CancellablePromiseInterface
     {
-        $promise = new CancellablePromise(function ($resolve, $reject) use ($reason) {
-            $reject($reason);
-        });
-
+        $promise = new CancellablePromise();
+        $promise->reject($reason);
         return $promise;
     }
 
