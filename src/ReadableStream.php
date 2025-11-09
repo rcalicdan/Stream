@@ -252,7 +252,8 @@ class ReadableStream implements ReadableStreamInterface
         $endDestination = $options['end'] ?? true;
         $totalBytes = 0;
         $cancelled = false;
-        $pendingWrites = [];
+        $pendingWriteCount = 0;
+        $hasError = false;
 
         $promise = new CancellablePromise();
 
@@ -261,31 +262,28 @@ class ReadableStream implements ReadableStreamInterface
         $errorHandler = null;
         $closeHandler = null;
 
-        $dataHandler = function ($data) use ($destination, &$totalBytes, &$cancelled, &$pendingWrites) {
-            if ($cancelled) {
+        $dataHandler = function ($data) use ($destination, &$totalBytes, &$cancelled, &$pendingWriteCount, &$hasError) {
+            if ($cancelled || $hasError) {
                 return;
             }
 
+            $pendingWriteCount++;
             $writePromise = $destination->write($data);
-            $pendingWrites[] = $writePromise;
 
-            $writePromise->then(function ($bytes) use (&$totalBytes, &$pendingWrites, $writePromise) {
+            $writePromise->then(function ($bytes) use (&$totalBytes, &$pendingWriteCount) {
                 $totalBytes += $bytes;
-
-                $key = array_search($writePromise, $pendingWrites, true);
-                if ($key !== false) {
-                    unset($pendingWrites[$key]);
-                    $pendingWrites = array_values($pendingWrites);
-                }
-            })->catch(function ($error) use (&$cancelled) {
-                if (!$cancelled) {
+                $pendingWriteCount--;
+            })->catch(function ($error) use (&$cancelled, &$pendingWriteCount, &$hasError) {
+                $pendingWriteCount--;
+                if (!$cancelled && !$hasError) {
+                    $hasError = true;
                     $this->emit('error', $error);
                 }
             });
         };
 
-        $endHandler = function () use ($promise, $destination, $endDestination, &$totalBytes, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler, &$cancelled, &$pendingWrites) {
-            if ($cancelled) {
+        $endHandler = function () use ($promise, $destination, $endDestination, &$totalBytes, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler, &$cancelled, &$pendingWriteCount, &$hasError) {
+            if ($cancelled || $hasError) {
                 return;
             }
 
@@ -294,7 +292,16 @@ class ReadableStream implements ReadableStreamInterface
             $this->off('error', $errorHandler);
             $destination->off('close', $closeHandler);
 
-            if (empty($pendingWrites)) {
+            $checkPending = function () use ($promise, $destination, $endDestination, &$totalBytes, &$pendingWriteCount, &$checkPending, &$hasError) {
+                if ($hasError) {
+                    return;
+                }
+
+                if ($pendingWriteCount > 0) {
+                    Loop::defer($checkPending);
+                    return;
+                }
+
                 if ($endDestination) {
                     $destination->end()->then(function () use ($promise, &$totalBytes) {
                         $promise->resolve($totalBytes);
@@ -304,28 +311,17 @@ class ReadableStream implements ReadableStreamInterface
                 } else {
                     $promise->resolve($totalBytes);
                 }
-            } else {
-                Promise::all($pendingWrites)->then(function () use ($promise, $destination, $endDestination, &$totalBytes) {
-                    if ($endDestination) {
-                        $destination->end()->then(function () use ($promise, &$totalBytes) {
-                            $promise->resolve($totalBytes);
-                        })->catch(function ($error) use ($promise, &$totalBytes) {
-                            $promise->resolve($totalBytes);
-                        });
-                    } else {
-                        $promise->resolve($totalBytes);
-                    }
-                })->catch(function ($error) use ($promise) {
-                    $promise->reject($error);
-                });
-            }
+            };
+
+            $checkPending();
         };
 
-        $errorHandler = function ($error) use ($promise, $destination, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler, &$cancelled) {
-            if ($cancelled) {
+        $errorHandler = function ($error) use ($promise, $destination, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler, &$cancelled, &$hasError) {
+            if ($cancelled || $hasError) {
                 return;
             }
 
+            $hasError = true;
             $this->off('data', $dataHandler);
             $this->off('end', $endHandler);
             $this->off('error', $errorHandler);
@@ -333,8 +329,8 @@ class ReadableStream implements ReadableStreamInterface
             $promise->reject($error);
         };
 
-        $closeHandler = function () use ($promise, $destination, &$cancelled, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler) {
-            if ($cancelled) {
+        $closeHandler = function () use ($promise, $destination, &$cancelled, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler, &$hasError) {
+            if ($cancelled || $hasError) {
                 return;
             }
 
@@ -344,6 +340,7 @@ class ReadableStream implements ReadableStreamInterface
             $destination->off('close', $closeHandler);
 
             if ($this->isReadable() && !$this->isEof()) {
+                $hasError = true;
                 $promise->reject(new StreamException('Destination closed before transfer completed'));
             }
         };
