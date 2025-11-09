@@ -9,12 +9,12 @@ use Hibla\EventLoop\Loop;
 */
 
 uses()->beforeEach(function () {
-})->in('Unit', 'Feature');
+})->in('Unit', 'Feature', 'Integration');
 
 uses()->afterEach(function () {
     Loop::stop();
     Loop::reset();
-})->in('Unit', 'Feature');
+})->in('Unit', 'Feature', 'Integration');
 
 /*
 |--------------------------------------------------------------------------

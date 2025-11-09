@@ -77,6 +77,16 @@ class Stream
     }
 
     /**
+     * Create a composite stream from separate readable and writable streams
+     */
+    public static function composite(
+        ReadableStreamInterface $readable,
+        WritableStreamInterface $writable
+    ): DuplexStreamInterface {
+        return new CompositeStream($readable, $writable);
+    }
+
+    /**
      * Create a through stream with optional transformer
      */
     public static function through(?callable $transformer = null): ThroughStream
@@ -106,5 +116,16 @@ class Stream
     public static function stderr(int $softLimit = 65536): WritableStreamInterface
     {
         return new WritableStream(STDERR, $softLimit);
+    }
+
+    /**
+     * Create a composite stream from STDIN and STDOUT
+     */
+    public static function stdio(int $readChunkSize = 8192, int $writeSoftLimit = 65536): DuplexStreamInterface
+    {
+        return new CompositeStream(
+            new ReadableStream(STDIN, $readChunkSize),
+            new WritableStream(STDOUT, $writeSoftLimit)
+        );
     }
 }
