@@ -49,16 +49,22 @@ interface WritableStreamInterface
      * Register event listener
      * 
      * Events: drain, error, close, finish
+     * 
+     * @return static
      */
-    public function on(string $event, callable $callback): self;
+    public function on(string $event, callable $callback);
 
     /**
      * Register one-time event listener
+     * 
+     * @return static
      */
-    public function once(string $event, callable $callback): self;
+    public function once(string $event, callable $callback);
 
     /**
      * Remove event listener
+     * 
+     * @return static
      */
-    public function off(string $event, callable $callback): self;
+    public function off(string $event, callable $callback);
 }

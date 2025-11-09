@@ -122,18 +122,15 @@ class ThroughStream implements DuplexStreamInterface
 
         $promise = new CancellablePromise(function ($resolve, $reject) use ($data) {
             try {
-                // Transform data if transformer is set
                 if ($this->transformer !== null) {
                     $data = ($this->transformer)($data);
                 }
 
-                // Emit the data
                 $this->emit('data', $data);
 
-                // Return indicating if we can continue writing
                 if ($this->paused) {
                     $this->draining = true;
-                    $resolve(0); // Indicate backpressure
+                    $resolve(0); 
                 } else {
                     $resolve(strlen($data));
                 }
@@ -159,27 +156,30 @@ class ThroughStream implements DuplexStreamInterface
         }
 
         $this->ending = true;
-        $this->writable = false;
 
         $promise = new CancellablePromise(function ($resolve, $reject) use ($data) {
-            if ($data !== null && $data !== '') {
-                $this->write($data)->then(function () use ($resolve) {
-                    $this->readable = false;
-                    $this->emit('end');
-                    $this->emit('finish');
-                    $this->close();
-                    $resolve(null);
-                })->catch(function ($error) use ($reject) {
-                    $this->emit('error', $error);
-                    $this->close();
-                    $reject($error);
-                });
-            } else {
+            try {
+                if ($data !== null && $data !== '') {
+                    $transformedData = $data;
+                    if ($this->transformer !== null) {
+                        $transformedData = ($this->transformer)($data);
+                    }
+
+                    $this->emit('data', $transformedData);
+                }
+
+                $this->writable = false;
                 $this->readable = false;
                 $this->emit('end');
                 $this->emit('finish');
                 $this->close();
                 $resolve(null);
+            } catch (\Throwable $e) {
+                $this->writable = false;
+                $this->readable = false;
+                $this->emit('error', $e);
+                $this->close();
+                $reject($e);
             }
         });
 
