@@ -56,7 +56,7 @@ class Stream
 
     /**
      * Create a readable stream from a resource
-     * 
+     *
      * @param resource $resource
      */
     public static function readable($resource, int $chunkSize = 8192): ReadableStreamInterface
@@ -66,7 +66,7 @@ class Stream
 
     /**
      * Create a writable stream from a resource
-     * 
+     *
      * @param resource $resource
      */
     public static function writable($resource, int $softLimit = 65536): WritableStreamInterface
@@ -76,7 +76,7 @@ class Stream
 
     /**
      * Create a duplex stream from a resource
-     * 
+     *
      * @param resource $resource
      */
     public static function duplex($resource, int $readChunkSize = 8192, int $writeSoftLimit = 65536): DuplexStreamInterface

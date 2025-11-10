@@ -11,7 +11,7 @@ trait PromiseHelperTrait
 {
     /**
      * Create a resolved CancellablePromise
-     * 
+     *
      * @template TValue
      * @param TValue $value
      * @return CancellablePromiseInterface<TValue>
@@ -27,7 +27,7 @@ trait PromiseHelperTrait
 
     /**
      * Create a rejected CancellablePromise
-     * 
+     *
      * @return CancellablePromiseInterface<never>
      */
     private function createRejectedPromise(\Throwable $reason): CancellablePromiseInterface
@@ -41,7 +41,7 @@ trait PromiseHelperTrait
 
     /**
      * Create a resolved void CancellablePromise
-     * 
+     *
      * @return CancellablePromiseInterface<void>
      */
     private function createResolvedVoidPromise(): CancellablePromiseInterface

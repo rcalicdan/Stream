@@ -135,7 +135,7 @@ class WritableStream implements WritableStreamInterface
         }
 
         $this->ending = true;
-        
+
         /** @var CancellablePromise<void> $promise */
         $promise = new CancellablePromise();
 

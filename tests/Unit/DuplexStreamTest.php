@@ -720,7 +720,8 @@ describe('DuplexStream', function () {
                     $stream->close();
                     expect($stream->isReadable())->toBeFalse();
                     expect($stream->isWritable())->toBeFalse();
-                });
+                })
+            ;
         });
 
         cleanupTempFile($tempPath);

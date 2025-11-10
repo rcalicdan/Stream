@@ -40,8 +40,8 @@ class CompositeStream implements DuplexStreamInterface
         $this->forwardEvents($this->readable, ['data', 'end', 'pause', 'resume']);
         $this->forwardEvents($this->writable, ['drain', 'finish']);
 
-        $this->readable->on('error', fn($error) => $this->emit('error', $error));
-        $this->writable->on('error', fn($error) => $this->emit('error', $error));
+        $this->readable->on('error', fn ($error) => $this->emit('error', $error));
+        $this->writable->on('error', fn ($error) => $this->emit('error', $error));
 
         $this->readable->on('close', function () {
             if (! $this->closed && ! $this->writable->isWritable()) {

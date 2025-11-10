@@ -44,7 +44,7 @@ class ReadAllHandler
             }
 
             $readPromise = ($this->readCallback)(min($this->chunkSize, $maxLength - strlen($buffer)));
-            
+
             $readPromise->then(
                 function ($data) use ($promise, &$buffer, &$readMore, &$cancelled) {
                     /** @phpstan-ignore if.alwaysFalse */

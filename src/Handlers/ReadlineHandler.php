@@ -16,7 +16,8 @@ class ReadLineHandler
     public function __construct(
         private $readCallback,
         private $prependBufferCallback
-    ) {}
+    ) {
+    }
 
     public function findLineInBuffer(string &$buffer, int $maxLength): ?string
     {

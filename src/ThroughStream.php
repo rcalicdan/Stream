@@ -106,7 +106,7 @@ class ThroughStream implements DuplexStreamInterface
 
             $this->off('data', $dataHandler);
             $this->off('end', $endHandler);
-            /** @phpstan-ignore argument.type */ 
+            /** @phpstan-ignore argument.type */
             $this->off('error', $errorHandler);
 
             if ($endDestination) {
@@ -192,7 +192,7 @@ class ThroughStream implements DuplexStreamInterface
         }
 
         $this->ending = true;
-        
+
         /** @var CancellablePromise<void> $promise */
         $promise = new CancellablePromise();
 
