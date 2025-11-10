@@ -1,10 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 use Hibla\Stream\DuplexStream;
 use Hibla\Stream\WritableStream;
 
 describe('DuplexStream Piping', function () {
-    
+
     test('can pipe DuplexStream to WritableStream', function () {
         $sourcePath = createTempFile();
         $sourceResource = fopen($sourcePath, 'w+');
@@ -42,8 +44,8 @@ describe('DuplexStream Piping', function () {
         $destResource = fopen($destPath, 'w+');
         $destStream = new DuplexStream($destResource);
 
-        $testData = "First chunk\n" . str_repeat("x", 100) . "\nSecond chunk\n";
-        
+        $testData = "First chunk\n" . str_repeat('x', 100) . "\nSecond chunk\n";
+
         $bytes = $sourceStream->write($testData)->await();
         expect($bytes)->toBe(strlen($testData));
 
@@ -63,7 +65,7 @@ describe('DuplexStream Piping', function () {
         expect($destContent)->toBe($testData);
 
         expect($receivedChunks)->not->toBeEmpty();
-        
+
         $totalReceived = implode('', $receivedChunks);
         expect($totalReceived)->toBe($testData);
 
@@ -84,7 +86,7 @@ describe('DuplexStream Piping', function () {
 
         $largeData = str_repeat("This is a test line with some content.\n", 25000);
         $expectedSize = strlen($largeData);
-        
+
         expect($expectedSize)->toBe(975000);
 
         $bytes = $sourceStream->write($largeData)->await();
@@ -157,7 +159,7 @@ describe('DuplexStream Piping', function () {
         });
 
         $totalBytes = $sourceStream->pipe($destStream, ['end' => false])->await();
-        
+
         expect($totalBytes)->toBe(strlen($testData));
         expect($finishEmitted)->toBeFalse('Destination should not emit finish');
         expect($destStream->isWritable())->toBeTrue('Destination should still be writable');
@@ -203,8 +205,9 @@ describe('DuplexStream Piping', function () {
 
         try {
             $sourceStream->pipe($destStream)->await();
-            throw new \Exception('Should have thrown');
-        } catch (\Throwable $e) {
+
+            throw new Exception('Should have thrown');
+        } catch (Throwable $e) {
             expect($e->getMessage())->toContain('not readable');
         }
         cleanupTempFile($sourcePath);
@@ -220,15 +223,16 @@ describe('DuplexStream Piping', function () {
         $destResource = fopen($destPath, 'w');
         $destStream = new WritableStream($destResource);
 
-        $sourceStream->write("test")->await();
+        $sourceStream->write('test')->await();
         fseek($sourceResource, 0, SEEK_SET);
 
         $destStream->close();
 
         try {
             $sourceStream->pipe($destStream)->await();
-            throw new \Exception('Should have thrown');
-        } catch (\Throwable $e) {
+
+            throw new Exception('Should have thrown');
+        } catch (Throwable $e) {
             expect($e->getMessage())->toContain('not writable');
         }
 
@@ -246,17 +250,17 @@ describe('DuplexStream Piping', function () {
         $destResource = fopen($destPath, 'w');
         $destStream = new WritableStream($destResource);
 
-        $largeData = str_repeat("x", 100000);
+        $largeData = str_repeat('x', 100000);
         $sourceStream->write($largeData)->await();
         fseek($sourceResource, 0, SEEK_SET);
 
         $pipePromise = $sourceStream->pipe($destStream, ['end' => true]);
-        
+
         $pipePromise->cancel();
 
         try {
             $pipePromise->await();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             // expected if we try to resolve a cancelled promise
         }
 

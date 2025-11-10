@@ -1,11 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 use Hibla\EventLoop\Loop;
 use Hibla\Promise\Promise;
 use Hibla\Stream\CompositeStream;
 use Hibla\Stream\ReadableStream;
-use Hibla\Stream\WritableStream;
 use Hibla\Stream\Stream;
+use Hibla\Stream\WritableStream;
 
 describe('CompositeStream', function () {
 
@@ -51,7 +53,7 @@ describe('CompositeStream', function () {
 
                     // Assert immediately when data is received
                     Loop::nextTick(function () use (&$receivedData, $cleanup, $resolve) {
-                        expect($receivedData)->toBe("Hello from composite!", 'Should receive data from composite stream');
+                        expect($receivedData)->toBe('Hello from composite!', 'Should receive data from composite stream');
                         $cleanup();
                         $resolve(true);
                     });
@@ -59,7 +61,7 @@ describe('CompositeStream', function () {
 
                 // Write to socket2 so it can be read from socket1
                 Loop::nextTick(function () use ($socket2) {
-                    fwrite($socket2, "Hello from composite!");
+                    fwrite($socket2, 'Hello from composite!');
                 });
             });
         }, 5000);
@@ -79,7 +81,7 @@ describe('CompositeStream', function () {
                 closeSocketPair([$socket1, $socket2]);
             };
 
-            return $composite->write("Test message")
+            return $composite->write('Test message')
                 ->then(function ($bytes) use ($socket1, $cleanup) {
                     expect($bytes)->toBe(12);
 
@@ -87,10 +89,10 @@ describe('CompositeStream', function () {
                         Loop::addTimer(0.2, function () use ($socket1, $cleanup, $resolve, $reject) {
                             try {
                                 $data = fread($socket1, 1024);
-                                expect($data)->toBe("Test message", 'Should read written data');
+                                expect($data)->toBe('Test message', 'Should read written data');
                                 $cleanup();
                                 $resolve(true);
-                            } catch (\Exception $e) {
+                            } catch (Exception $e) {
                                 $cleanup();
                                 $reject($e);
                             }
@@ -99,8 +101,10 @@ describe('CompositeStream', function () {
                 })
                 ->catch(function ($error) use ($cleanup) {
                     $cleanup();
+
                     throw $error;
-                });
+                })
+            ;
         }, 5000);
     });
 
@@ -136,10 +140,10 @@ describe('CompositeStream', function () {
                     $received1 .= $data;
 
                     Loop::nextTick(function () use (&$received1, &$messagesReceived, $composite2, &$received2, $cleanup, $resolve) {
-                        expect($received1)->toBe("Hello from side 1!", 'Side 2 should receive message from side 1');
+                        expect($received1)->toBe('Hello from side 1!', 'Side 2 should receive message from side 1');
                         $messagesReceived++;
 
-                        $composite2->write("Hello from side 2!");
+                        $composite2->write('Hello from side 2!');
                     });
                 });
 
@@ -147,7 +151,7 @@ describe('CompositeStream', function () {
                     $received2 .= $data;
 
                     Loop::nextTick(function () use (&$received2, &$messagesReceived, $cleanup, $resolve) {
-                        expect($received2)->toBe("Hello from side 2!", 'Side 1 should receive message from side 2');
+                        expect($received2)->toBe('Hello from side 2!', 'Side 1 should receive message from side 2');
                         $messagesReceived++;
 
                         if ($messagesReceived === 2) {
@@ -158,7 +162,7 @@ describe('CompositeStream', function () {
                 });
 
                 Loop::nextTick(function () use ($composite1) {
-                    $composite1->write("Hello from side 1!");
+                    $composite1->write('Hello from side 1!');
                 });
             });
         }, 5000);
@@ -189,7 +193,7 @@ describe('CompositeStream', function () {
 
             expect($pipePromise)->toBeInstanceOf(Promise::class);
 
-            fwrite($socket2, "Pipe test data more data");
+            fwrite($socket2, 'Pipe test data more data');
 
             return new Promise(function ($resolve) use ($socket4, $cleanup) {
                 Loop::addTimer(0.3, function () use ($socket4, $cleanup, $resolve) {
@@ -199,7 +203,7 @@ describe('CompositeStream', function () {
                         expect(false)->toBeTrue('Failed to read piped data - pipe may not be working');
                     } else {
                         expect(strlen($data))->toBeGreaterThan(0);
-                        expect($data)->toContain("Pipe test");
+                        expect($data)->toContain('Pipe test');
                     }
 
                     $cleanup();
@@ -229,7 +233,7 @@ describe('CompositeStream', function () {
                         expect($composite->isWritable())->toBeFalse();
                         $cleanup();
                         $resolve(true);
-                    } catch (\Exception $e) {
+                    } catch (Exception $e) {
                         $cleanup();
                         $reject($e);
                     }

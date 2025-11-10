@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hibla\Stream\Handlers;
 
 use Hibla\Promise\CancellablePromise;
@@ -29,6 +31,7 @@ class ReadAllHandler
 
             if (strlen($buffer) >= $maxLength) {
                 $promise->resolve($buffer);
+
                 return;
             }
 
@@ -40,6 +43,7 @@ class ReadAllHandler
 
                     if ($data === null) {
                         $promise->resolve($buffer);
+
                         return;
                     }
 
@@ -47,7 +51,7 @@ class ReadAllHandler
                     $readMore();
                 }
             )->catch(function ($error) use ($promise, &$cancelled) {
-                if (!$cancelled) {
+                if (! $cancelled) {
                     $promise->reject($error);
                 }
             });

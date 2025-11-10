@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hibla\Stream;
 
 use Hibla\Promise\Interfaces\CancellablePromiseInterface;
@@ -23,12 +25,12 @@ class DuplexStream implements DuplexStreamInterface
      */
     public function __construct($resource, int $readChunkSize = 8192, int $writeSoftLimit = 65536)
     {
-        if (!is_resource($resource)) {
+        if (! is_resource($resource)) {
             throw new StreamException('Invalid resource provided');
         }
 
         $meta = stream_get_meta_data($resource);
-        if (!str_contains($meta['mode'], '+')) {
+        if (! str_contains($meta['mode'], '+')) {
             throw new StreamException('Resource must be opened in read+write mode (e.g., "r+", "w+", "a+")');
         }
 
@@ -38,17 +40,17 @@ class DuplexStream implements DuplexStreamInterface
         $this->forwardEvents($this->readable, ['data', 'end', 'pause', 'resume']);
         $this->forwardEvents($this->writable, ['drain', 'finish']);
 
-        $this->readable->on('error', fn($error) => $this->emit('error', $error));
-        $this->writable->on('error', fn($error) => $this->emit('error', $error));
+        $this->readable->on('error', fn ($error) => $this->emit('error', $error));
+        $this->writable->on('error', fn ($error) => $this->emit('error', $error));
 
         $this->readable->on('close', function () {
-            if (!$this->closed) {
+            if (! $this->closed) {
                 $this->close();
             }
         });
 
         $this->writable->on('close', function () {
-            if (!$this->closed) {
+            if (! $this->closed) {
                 $this->close();
             }
         });
@@ -123,6 +125,7 @@ class DuplexStream implements DuplexStreamInterface
     public function end(?string $data = null): CancellablePromiseInterface
     {
         $this->readable->pause();
+
         return $this->writable->end($data);
     }
 
@@ -153,7 +156,7 @@ class DuplexStream implements DuplexStreamInterface
 
     public function __destruct()
     {
-        if (!$this->closed) {
+        if (! $this->closed) {
             $this->close();
         }
     }

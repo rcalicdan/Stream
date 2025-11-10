@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hibla\Stream;
 
 use Hibla\Promise\Interfaces\CancellablePromiseInterface;
@@ -38,17 +40,17 @@ class CompositeStream implements DuplexStreamInterface
         $this->forwardEvents($this->readable, ['data', 'end', 'pause', 'resume']);
         $this->forwardEvents($this->writable, ['drain', 'finish']);
 
-        $this->readable->on('error', fn($error) => $this->emit('error', $error));
-        $this->writable->on('error', fn($error) => $this->emit('error', $error));
+        $this->readable->on('error', fn ($error) => $this->emit('error', $error));
+        $this->writable->on('error', fn ($error) => $this->emit('error', $error));
 
         $this->readable->on('close', function () {
-            if (!$this->closed && !$this->writable->isWritable()) {
+            if (! $this->closed && ! $this->writable->isWritable()) {
                 $this->close();
             }
         });
 
         $this->writable->on('close', function () {
-            if (!$this->closed && !$this->readable->isReadable()) {
+            if (! $this->closed && ! $this->readable->isReadable()) {
                 $this->close();
             }
         });
@@ -62,7 +64,6 @@ class CompositeStream implements DuplexStreamInterface
             });
         }
     }
-
 
     public function read(?int $length = null): CancellablePromiseInterface
     {
@@ -102,7 +103,7 @@ class CompositeStream implements DuplexStreamInterface
 
     public function isReadable(): bool
     {
-        return !$this->closed && $this->readable->isReadable();
+        return ! $this->closed && $this->readable->isReadable();
     }
 
     public function isEof(): bool
@@ -112,14 +113,14 @@ class CompositeStream implements DuplexStreamInterface
 
     public function pause(): void
     {
-        if (!$this->closed) {
+        if (! $this->closed) {
             $this->readable->pause();
         }
     }
 
     public function resume(): void
     {
-        if (!$this->closed && $this->writable->isWritable()) {
+        if (! $this->closed && $this->writable->isWritable()) {
             $this->readable->resume();
         }
     }
@@ -160,7 +161,7 @@ class CompositeStream implements DuplexStreamInterface
 
     public function isWritable(): bool
     {
-        return !$this->closed && $this->writable->isWritable();
+        return ! $this->closed && $this->writable->isWritable();
     }
 
     public function isEnding(): bool
@@ -200,7 +201,7 @@ class CompositeStream implements DuplexStreamInterface
 
     public function __destruct()
     {
-        if (!$this->closed) {
+        if (! $this->closed) {
             $this->close();
         }
     }

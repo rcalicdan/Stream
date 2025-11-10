@@ -1,8 +1,10 @@
 <?php
 
-use Hibla\Stream\DuplexStream;
+declare(strict_types=1);
+
 use Hibla\EventLoop\Loop;
 use Hibla\Promise\Promise;
+use Hibla\Stream\DuplexStream;
 
 describe('DuplexStream TCP Integration', function () {
 
@@ -60,9 +62,10 @@ describe('DuplexStream TCP Integration', function () {
                 Loop::addTimer(0.05, function () use ($host, $port, $resolve, $reject, $cleanup) {
                     $clientSocket = @stream_socket_client("tcp://$host:$port", $errno, $errstr, 5);
 
-                    if (!$clientSocket) {
+                    if (! $clientSocket) {
                         $cleanup();
                         $reject(new Exception("Client connection failed: $errstr ($errno)"));
+
                         return;
                     }
 
@@ -78,7 +81,7 @@ describe('DuplexStream TCP Integration', function () {
                     $messages = [
                         "Hello, Server!\n",
                         "This is message 2\n",
-                        "Final message\n"
+                        "Final message\n",
                     ];
 
                     $expectedData = implode('', $messages);
@@ -120,7 +123,8 @@ describe('DuplexStream TCP Integration', function () {
                         ->catch(function ($error) use ($reject, $cleanup) {
                             $cleanup();
                             $reject($error);
-                        });
+                        })
+                    ;
                 });
             });
         }, 10000);
@@ -133,7 +137,7 @@ describe('DuplexStream TCP Integration', function () {
 
             $serverSocket = @stream_socket_server("tcp://$host:$port", $errno, $errstr);
 
-            expect($serverSocket)->not->toBeFalse("Failed to create server");
+            expect($serverSocket)->not->toBeFalse('Failed to create server');
 
             stream_set_blocking($serverSocket, false);
 
@@ -178,29 +182,32 @@ describe('DuplexStream TCP Integration', function () {
                     }
                 }, 'read');
 
-                // Connect client 
+                // Connect client
                 Loop::addTimer(0.05, function () use ($host, $port, $reject, $cleanup) {
                     $clientSocket = @stream_socket_client("tcp://$host:$port", $errno, $errstr, 5);
 
-                    if (!$clientSocket) {
+                    if (! $clientSocket) {
                         $cleanup();
                         $reject(new Exception("Client connection failed: $errstr ($errno)"));
+
                         return;
                     }
 
                     $clientStream = new DuplexStream($clientSocket);
 
-                    $largeData = str_repeat("X", 1024 * 500);
+                    $largeData = str_repeat('X', 1024 * 500);
 
                     $clientStream->write($largeData)
                         ->then(function ($bytes) use ($clientStream) {
                             expect($bytes)->toBe(512000, 'Should send exactly 500KB');
+
                             return $clientStream->end();
                         })
                         ->catch(function ($error) use ($reject, $cleanup) {
                             $cleanup();
                             $reject($error);
-                        });
+                        })
+                    ;
                 });
             });
         }, 15000);
@@ -213,7 +220,7 @@ describe('DuplexStream TCP Integration', function () {
 
             $serverSocket = @stream_socket_server("tcp://$host:$port", $errno, $errstr);
 
-            expect($serverSocket)->not->toBeFalse("Failed to create server");
+            expect($serverSocket)->not->toBeFalse('Failed to create server');
 
             stream_set_blocking($serverSocket, false);
 
@@ -266,19 +273,20 @@ describe('DuplexStream TCP Integration', function () {
                 Loop::addTimer(0.05, function () use ($host, $port, $resolve, $reject, $cleanup) {
                     $clientSocket = @stream_socket_client("tcp://$host:$port", $errno, $errstr, 5);
 
-                    if (!$clientSocket) {
+                    if (! $clientSocket) {
                         $cleanup();
                         $reject(new Exception("Client connection failed: $errstr ($errno)"));
+
                         return;
                     }
 
                     $clientStream = new DuplexStream($clientSocket);
 
                     $serverResponses = [];
-                    $messages = ["Hello", "How are you?", "Goodbye"];
+                    $messages = ['Hello', 'How are you?', 'Goodbye'];
 
                     // Send and receive messages
-                    $clientStream->writeLine("Hello")
+                    $clientStream->writeLine('Hello')
                         ->then(function () use ($clientStream) {
                             return $clientStream->readLine();
                         })
@@ -286,7 +294,8 @@ describe('DuplexStream TCP Integration', function () {
                             expect($response)->not->toBeNull('Should receive response');
                             $serverResponses[] = trim($response);
                             expect($response)->toContain('Hello');
-                            return $clientStream->writeLine("How are you?");
+
+                            return $clientStream->writeLine('How are you?');
                         })
                         ->then(function () use ($clientStream) {
                             return $clientStream->readLine();
@@ -295,7 +304,8 @@ describe('DuplexStream TCP Integration', function () {
                             expect($response)->not->toBeNull('Should receive response');
                             $serverResponses[] = trim($response);
                             expect($response)->toContain('How are you?');
-                            return $clientStream->writeLine("Goodbye");
+
+                            return $clientStream->writeLine('Goodbye');
                         })
                         ->then(function () use ($clientStream) {
                             return $clientStream->readLine();
@@ -318,7 +328,8 @@ describe('DuplexStream TCP Integration', function () {
                         ->catch(function ($error) use ($reject, $cleanup) {
                             $cleanup();
                             $reject($error);
-                        });
+                        })
+                    ;
                 });
             });
         }, 10000);
@@ -331,7 +342,7 @@ describe('DuplexStream TCP Integration', function () {
 
             $serverSocket = @stream_socket_server("tcp://$host:$port", $errno, $errstr);
 
-            expect($serverSocket)->not->toBeFalse("Failed to create server");
+            expect($serverSocket)->not->toBeFalse('Failed to create server');
 
             stream_set_blocking($serverSocket, false);
 
@@ -373,9 +384,10 @@ describe('DuplexStream TCP Integration', function () {
                     Loop::addTimer(0.05, function () use ($index, $host, $port, &$connectClient, $resolve, $reject, $cleanup, &$completedCount) {
                         $clientSocket = @stream_socket_client("tcp://$host:$port", $errno, $errstr, 5);
 
-                        if (!$clientSocket) {
+                        if (! $clientSocket) {
                             $cleanup();
                             $reject(new Exception("Client $index connection failed"));
+
                             return;
                         }
 
@@ -414,7 +426,8 @@ describe('DuplexStream TCP Integration', function () {
                             ->catch(function ($error) use ($reject, $cleanup) {
                                 $cleanup();
                                 $reject($error);
-                            });
+                            })
+                        ;
                     });
                 };
 

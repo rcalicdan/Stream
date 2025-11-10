@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hibla\Stream\Handlers;
 
 use Hibla\EventLoop\Loop;
@@ -91,7 +93,7 @@ class PipeHandler
                 $pendingWriteCount--;
             })->catch(function ($error) use (&$cancelled, &$pendingWriteCount, &$hasError) {
                 $pendingWriteCount--;
-                if (!$cancelled && !$hasError) {
+                if (! $cancelled && ! $hasError) {
                     $hasError = true;
                     ($this->emitCallback)('error', $error);
                 }
@@ -107,7 +109,7 @@ class PipeHandler
                 'data' => $dataHandler,
                 'end' => $endHandler,
                 'error' => $errorHandler,
-                'close' => $closeHandler
+                'close' => $closeHandler,
             ]);
 
             $this->waitForPendingWrites($pendingWriteCount, $hasError, function () use ($promise, $destination, $endDestination, &$totalBytes) {
@@ -133,7 +135,7 @@ class PipeHandler
                 'data' => $dataHandler,
                 'end' => $endHandler,
                 'error' => $errorHandler,
-                'close' => $closeHandler
+                'close' => $closeHandler,
             ]);
             $promise->reject($error);
         };
@@ -147,10 +149,10 @@ class PipeHandler
                 'data' => $dataHandler,
                 'end' => $endHandler,
                 'error' => $errorHandler,
-                'close' => $closeHandler
+                'close' => $closeHandler,
             ]);
 
-            if (($this->isReadableCallback)() && !($this->isEofCallback)()) {
+            if (($this->isReadableCallback)() && ! ($this->isEofCallback)()) {
                 $hasError = true;
                 $promise->reject(new StreamException('Destination closed before transfer completed'));
             }
@@ -160,7 +162,7 @@ class PipeHandler
             'data' => $dataHandler,
             'end' => $endHandler,
             'error' => $errorHandler,
-            'close' => $closeHandler
+            'close' => $closeHandler,
         ];
     }
 
@@ -189,6 +191,7 @@ class PipeHandler
 
             if ($pendingWriteCount > 0) {
                 Loop::defer($checkPending);
+
                 return;
             }
 

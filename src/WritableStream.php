@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hibla\Stream;
 
 use Hibla\Promise\CancellablePromise;
@@ -31,7 +33,7 @@ class WritableStream implements WritableStreamInterface
      */
     public function __construct($resource, int $softLimit = 65536)
     {
-        if (!is_resource($resource)) {
+        if (! is_resource($resource)) {
             throw new StreamException('Invalid resource provided');
         }
 
@@ -41,11 +43,12 @@ class WritableStream implements WritableStreamInterface
         foreach ($writableModes as $mode) {
             if (str_contains($meta['mode'], $mode)) {
                 $isWritable = true;
+
                 break;
             }
         }
 
-        if (!$isWritable) {
+        if (! $isWritable) {
             throw new StreamException('Resource is not writable');
         }
 
@@ -65,7 +68,7 @@ class WritableStream implements WritableStreamInterface
 
         if (in_array($streamType, ['tcp_socket', 'udp_socket', 'unix_socket', 'ssl_socket', 'TCP/IP', 'tcp_socket/ssl'])) {
             $shouldSetNonBlocking = true;
-        } elseif (!$isWindows && in_array($streamType, ['STDIO', 'PLAINFILE', 'TEMP', 'MEMORY'])) {
+        } elseif (! $isWindows && in_array($streamType, ['STDIO', 'PLAINFILE', 'TEMP', 'MEMORY'])) {
             $shouldSetNonBlocking = true;
         }
 
@@ -79,14 +82,14 @@ class WritableStream implements WritableStreamInterface
         $this->handler = new WritableStreamHandler(
             $this->resource,
             $this->softLimit,
-            fn(string $event, ...$args) => $this->emit($event, ...$args),
-            fn() => $this->close()
+            fn (string $event, ...$args) => $this->emit($event, ...$args),
+            fn () => $this->close()
         );
     }
 
     public function write(string $data): CancellablePromiseInterface
     {
-        if (!$this->writable && !$this->ending) {
+        if (! $this->writable && ! $this->ending) {
             return $this->createRejectedPromise(new StreamException('Stream is not writable'));
         }
 
@@ -157,7 +160,7 @@ class WritableStream implements WritableStreamInterface
 
     public function isWritable(): bool
     {
-        return $this->writable && !$this->closed;
+        return $this->writable && ! $this->closed;
     }
 
     public function isEnding(): bool
@@ -241,7 +244,7 @@ class WritableStream implements WritableStreamInterface
 
     public function __destruct()
     {
-        if (!$this->closed) {
+        if (! $this->closed) {
             $this->close();
         }
     }

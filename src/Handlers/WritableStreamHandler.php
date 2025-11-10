@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hibla\Stream\Handlers;
 
 use Hibla\EventLoop\Loop;
@@ -38,7 +40,7 @@ class WritableStreamHandler
 
     public function hasQueuedWrites(): bool
     {
-        return !empty($this->writeQueue);
+        return ! empty($this->writeQueue);
     }
 
     public function queueWrite(string $data, CancellablePromiseInterface $promise): void
@@ -47,8 +49,8 @@ class WritableStreamHandler
         $bytesToWrite = strlen($data);
 
         $this->writeQueue[] = [
-            'resolve' => fn($value) => $promise->resolve($value),
-            'reject' => fn($reason) => $promise->reject($reason),
+            'resolve' => fn ($value) => $promise->resolve($value),
+            'reject' => fn ($reason) => $promise->reject($reason),
             'bytes' => $bytesToWrite,
             'promise' => $promise,
         ];
@@ -63,6 +65,7 @@ class WritableStreamHandler
                 $bytesToRemove = $item['bytes'];
                 unset($this->writeQueue[$index]);
                 $this->writeQueue = array_values($this->writeQueue);
+
                 break;
             }
         }
@@ -78,9 +81,9 @@ class WritableStreamHandler
 
     public function rejectAllPending(\Throwable $error): void
     {
-        while (!empty($this->writeQueue)) {
+        while (! empty($this->writeQueue)) {
             $item = array_shift($this->writeQueue);
-            if (!$item['promise']->isCancelled()) {
+            if (! $item['promise']->isCancelled()) {
                 $item['reject']($error);
             }
         }
@@ -93,13 +96,13 @@ class WritableStreamHandler
             return;
         }
 
-        if (!$writable && !$ending) {
+        if (! $writable && ! $ending) {
             return;
         }
 
         $this->watcherId = Loop::addStreamWatcher(
             $this->resource,
-            fn() => $this->handleWritable(),
+            fn () => $this->handleWritable(),
             'write'
         );
     }
@@ -124,14 +127,15 @@ class WritableStreamHandler
             $error = new StreamException('Failed to write to stream');
             ($this->emitCallback)('error', $error);
 
-            while (!empty($this->writeQueue)) {
+            while (! empty($this->writeQueue)) {
                 $item = array_shift($this->writeQueue);
-                if (!$item['promise']->isCancelled()) {
+                if (! $item['promise']->isCancelled()) {
                     $item['reject']($error);
                 }
             }
 
             ($this->closeCallback)();
+
             return;
         }
 
@@ -157,12 +161,13 @@ class WritableStreamHandler
     private function resolveCompletedWrites(int $written): void
     {
         $remaining = $written;
-        
-        while ($remaining > 0 && !empty($this->writeQueue)) {
+
+        while ($remaining > 0 && ! empty($this->writeQueue)) {
             $item = &$this->writeQueue[0];
 
             if ($item['promise']->isCancelled()) {
                 array_shift($this->writeQueue);
+
                 continue;
             }
 

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hibla\Stream;
 
 use Hibla\Stream\Exceptions\StreamException;
@@ -15,7 +17,7 @@ class Stream
     public static function readableFile(string $path, int $chunkSize = 8192): ReadableStreamInterface
     {
         $resource = @fopen($path, 'rb');
-        
+
         if ($resource === false) {
             throw new StreamException("Failed to open file for reading: {$path}");
         }
@@ -30,7 +32,7 @@ class Stream
     {
         $mode = $append ? 'ab' : 'wb';
         $resource = @fopen($path, $mode);
-        
+
         if ($resource === false) {
             throw new StreamException("Failed to open file for writing: {$path}");
         }
@@ -44,7 +46,7 @@ class Stream
     public static function duplexFile(string $path, int $readChunkSize = 8192, int $writeSoftLimit = 65536): DuplexStreamInterface
     {
         $resource = @fopen($path, 'r+b');
-        
+
         if ($resource === false) {
             throw new StreamException("Failed to open file for read/write: {$path}");
         }

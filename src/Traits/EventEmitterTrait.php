@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hibla\Stream\Traits;
 
 trait EventEmitterTrait
@@ -17,7 +19,7 @@ trait EventEmitterTrait
     {
         $this->listeners[$event] ??= [];
         $this->listeners[$event][$this->listenerIdCounter++] = $callback;
-        
+
         return $this;
     }
 
@@ -31,9 +33,9 @@ trait EventEmitterTrait
             $this->off($event, $wrapper);
             $callback(...$args);
         };
-        
+
         $this->on($event, $wrapper);
-        
+
         return $this;
     }
 
@@ -42,7 +44,7 @@ trait EventEmitterTrait
      */
     public function off(string $event, callable $callback): self
     {
-        if (!isset($this->listeners[$event])) {
+        if (! isset($this->listeners[$event])) {
             return $this;
         }
 
@@ -55,7 +57,7 @@ trait EventEmitterTrait
         if (empty($this->listeners[$event])) {
             unset($this->listeners[$event]);
         }
-        
+
         return $this;
     }
 
@@ -64,7 +66,7 @@ trait EventEmitterTrait
      */
     protected function emit(string $event, mixed ...$args): void
     {
-        if (!isset($this->listeners[$event])) {
+        if (! isset($this->listeners[$event])) {
             return;
         }
 
@@ -87,7 +89,7 @@ trait EventEmitterTrait
      */
     protected function hasListeners(string $event): bool
     {
-        return isset($this->listeners[$event]) && !empty($this->listeners[$event]);
+        return isset($this->listeners[$event]) && ! empty($this->listeners[$event]);
     }
 
     /**

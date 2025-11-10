@@ -1,14 +1,16 @@
 <?php
 
+declare(strict_types=1);
+
 use Hibla\EventLoop\Loop;
-use Hibla\Stream\ReadableStream;
 use Hibla\Stream\Exceptions\StreamException;
+use Hibla\Stream\ReadableStream;
 
 describe('ReadableStream', function () {
     beforeEach(function () {
-       Loop::reset();
+        Loop::reset();
     });
-    
+
     test('can be created from a readable resource', function () {
         $file = createTempFile('test data');
         $resource = fopen($file, 'r');
@@ -73,7 +75,7 @@ describe('ReadableStream', function () {
     });
 
     test('can read line by line', function () {
-        $lines = ["First line\n", "Second line\n", "Third line"];
+        $lines = ["First line\n", "Second line\n", 'Third line'];
         $content = implode('', $lines);
         $file = createTempFile($content);
         $resource = fopen($file, 'r');
@@ -125,7 +127,7 @@ describe('ReadableStream', function () {
         $stream->resume();
 
         // Wait for stream to complete
-        usleep(100000); 
+        usleep(100000);
         Loop::run();
 
         expect($emittedData)->toBe($content);
@@ -144,25 +146,25 @@ describe('ReadableStream', function () {
         $dataCount = 0;
         $paused = false;
         $allData = '';
-        $pauseTriggered = false; 
+        $pauseTriggered = false;
 
         $stream->on('data', function ($data) use ($stream, &$dataCount, &$paused, &$allData, &$pauseTriggered) {
             if ($pauseTriggered) {
-                return; 
+                return;
             }
 
             $dataCount++;
             $allData .= $data;
 
-            if ($dataCount === 2 && !$paused) {
+            if ($dataCount === 2 && ! $paused) {
                 expect($stream->isPaused())->toBeFalse();
                 $stream->pause();
                 expect($stream->isPaused())->toBeTrue();
                 $paused = true;
-                $pauseTriggered = true; 
+                $pauseTriggered = true;
 
                 Loop::addTimer(0.05, function () use ($stream, &$pauseTriggered) {
-                    $pauseTriggered = false; 
+                    $pauseTriggered = false;
                     $stream->resume();
                 });
             }
@@ -253,7 +255,7 @@ describe('ReadableStream', function () {
 
         try {
             $stream->read()->await();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             expect($e)->toBeInstanceOf(StreamException::class);
             expect($e->getMessage())->toContain('not readable');
         }
@@ -303,7 +305,7 @@ describe('ReadableStream', function () {
         $line3 = $stream->readLine()->await();
 
         expect($line1)->toBe("Line 1\n");
-        expect($line2)->toBe("Line 2");
+        expect($line2)->toBe('Line 2');
         expect($line3)->toBeNull();
 
         $stream->close();

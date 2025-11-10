@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hibla\Stream\Traits;
 
 use Hibla\Promise\CancellablePromise;
@@ -14,6 +16,7 @@ trait PromiseHelperTrait
     {
         $promise = new CancellablePromise();
         $promise->resolve($value);
+
         return $promise;
     }
 
@@ -24,6 +27,7 @@ trait PromiseHelperTrait
     {
         $promise = new CancellablePromise();
         $promise->reject($reason);
+
         return $promise;
     }
 }

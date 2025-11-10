@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hibla\Stream;
 
 use Hibla\Promise\CancellablePromise;
@@ -39,12 +41,12 @@ class ReadableStream implements ReadableStreamInterface
      */
     public function __construct($resource, int $chunkSize = 65536)
     {
-        if (!is_resource($resource)) {
+        if (! is_resource($resource)) {
             throw new StreamException('Invalid resource provided');
         }
 
         $meta = stream_get_meta_data($resource);
-        if (!str_contains($meta['mode'], 'r') && !str_contains($meta['mode'], '+')) {
+        if (! str_contains($meta['mode'], 'r') && ! str_contains($meta['mode'], '+')) {
             throw new StreamException('Resource is not readable');
         }
 
@@ -64,7 +66,7 @@ class ReadableStream implements ReadableStreamInterface
 
         if (in_array($streamType, ['tcp_socket', 'udp_socket', 'unix_socket', 'ssl_socket', 'TCP/IP', 'tcp_socket/ssl'])) {
             $shouldSetNonBlocking = true;
-        } elseif (!$isWindows && in_array($streamType, ['STDIO', 'PLAINFILE', 'TEMP', 'MEMORY'])) {
+        } elseif (! $isWindows && in_array($streamType, ['STDIO', 'PLAINFILE', 'TEMP', 'MEMORY'])) {
             $shouldSetNonBlocking = true;
         }
 
@@ -87,37 +89,37 @@ class ReadableStream implements ReadableStreamInterface
                     $this->eof = true;
                 }
             },
-            fn() => $this->close(),
-            fn() => feof($this->resource),
-            fn() => $this->pause(),
-            fn() => $this->paused,
-            fn(string $event) => $this->hasListeners($event)
+            fn () => $this->close(),
+            fn () => feof($this->resource),
+            fn () => $this->pause(),
+            fn () => $this->paused,
+            fn (string $event) => $this->hasListeners($event)
         );
 
         $this->lineHandler = new ReadLineHandler(
-            fn(?int $length) => $this->read($length),
-            fn(string $data) => $this->handler->prependBuffer($data)
+            fn (?int $length) => $this->read($length),
+            fn (string $data) => $this->handler->prependBuffer($data)
         );
 
         $this->allHandler = new ReadAllHandler(
             $this->chunkSize,
-            fn(?int $length) => $this->read($length)
+            fn (?int $length) => $this->read($length)
         );
 
         $this->pipeHandler = new PipeHandler(
-            fn(string $event, callable $callback) => $this->on($event, $callback),
-            fn(string $event, callable $callback) => $this->off($event, $callback),
-            fn(string $event, ...$args) => $this->emit($event, ...$args),
-            fn() => $this->pause(),
-            fn() => $this->resume(),
-            fn() => $this->isReadable(),
-            fn() => $this->isEof()
+            fn (string $event, callable $callback) => $this->on($event, $callback),
+            fn (string $event, callable $callback) => $this->off($event, $callback),
+            fn (string $event, ...$args) => $this->emit($event, ...$args),
+            fn () => $this->pause(),
+            fn () => $this->resume(),
+            fn () => $this->isReadable(),
+            fn () => $this->isEof()
         );
     }
 
     public function read(?int $length = null): CancellablePromiseInterface
     {
-        if (!$this->isReadable()) {
+        if (! $this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
@@ -142,7 +144,7 @@ class ReadableStream implements ReadableStreamInterface
 
     public function readLine(?int $maxLength = null): CancellablePromiseInterface
     {
-        if (!$this->isReadable()) {
+        if (! $this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
@@ -156,16 +158,18 @@ class ReadableStream implements ReadableStreamInterface
         $line = $this->lineHandler->findLineInBuffer($buffer, $maxLen);
         if ($line !== null) {
             $this->handler->setBuffer($buffer);
+
             return $this->createResolvedPromise($line);
         }
 
         $this->handler->clearBuffer();
+
         return $this->lineHandler->readLineFromStream($buffer, $maxLen);
     }
 
     public function readAll(int $maxLength = 1048576): CancellablePromiseInterface
     {
-        if (!$this->isReadable()) {
+        if (! $this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
@@ -177,11 +181,11 @@ class ReadableStream implements ReadableStreamInterface
 
     public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
     {
-        if (!$this->isReadable()) {
+        if (! $this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
-        if (!$destination->isWritable()) {
+        if (! $destination->isWritable()) {
             return $this->createRejectedPromise(new StreamException('Destination is not writable'));
         }
 
@@ -190,7 +194,7 @@ class ReadableStream implements ReadableStreamInterface
 
     public function pause(): void
     {
-        if (!$this->readable || $this->paused || $this->closed) {
+        if (! $this->readable || $this->paused || $this->closed) {
             return;
         }
 
@@ -201,7 +205,7 @@ class ReadableStream implements ReadableStreamInterface
 
     public function resume(): void
     {
-        if (!$this->readable || !$this->paused || $this->closed) {
+        if (! $this->readable || ! $this->paused || $this->closed) {
             return;
         }
 
@@ -212,7 +216,7 @@ class ReadableStream implements ReadableStreamInterface
 
     public function isReadable(): bool
     {
-        return $this->readable && !$this->closed;
+        return $this->readable && ! $this->closed;
     }
 
     public function isEof(): bool
@@ -248,7 +252,7 @@ class ReadableStream implements ReadableStreamInterface
 
     public function __destruct()
     {
-        if (!$this->closed) {
+        if (! $this->closed) {
             $this->close();
         }
     }

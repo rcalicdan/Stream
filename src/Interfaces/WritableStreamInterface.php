@@ -1,4 +1,6 @@
-<?php 
+<?php
+
+declare(strict_types=1);
 
 namespace Hibla\Stream\Interfaces;
 
@@ -8,7 +10,7 @@ interface WritableStreamInterface
 {
     /**
      * Write data to the stream
-     * 
+     *
      * @param string $data Data to write
      * @return CancellablePromiseInterface<int> Resolves with bytes written
      */
@@ -16,7 +18,7 @@ interface WritableStreamInterface
 
     /**
      * Write a line to the stream
-     * 
+     *
      * @param string $data Data to write (newline added automatically)
      * @return CancellablePromiseInterface<int>
      */
@@ -24,7 +26,7 @@ interface WritableStreamInterface
 
     /**
      * End the stream (optionally writing final data)
-     * 
+     *
      * @param string|null $data Optional final data
      * @return CancellablePromiseInterface<void>
      */
@@ -47,23 +49,23 @@ interface WritableStreamInterface
 
     /**
      * Register event listener
-     * 
+     *
      * Events: drain, error, close, finish
-     * 
+     *
      * @return static
      */
     public function on(string $event, callable $callback);
 
     /**
      * Register one-time event listener
-     * 
+     *
      * @return static
      */
     public function once(string $event, callable $callback);
 
     /**
      * Remove event listener
-     * 
+     *
      * @return static
      */
     public function off(string $event, callable $callback);

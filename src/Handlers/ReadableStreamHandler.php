@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hibla\Stream\Handlers;
 
 use Hibla\EventLoop\Loop;
@@ -70,14 +72,14 @@ class ReadableStreamHandler
 
     public function hasQueuedReads(): bool
     {
-        return !empty($this->readQueue);
+        return ! empty($this->readQueue);
     }
 
     public function queueRead(?int $length, CancellablePromiseInterface $promise): void
     {
         $this->readQueue[] = [
-            'resolve' => fn($value) => $promise->resolve($value),
-            'reject' => fn($reason) => $promise->reject($reason),
+            'resolve' => fn ($value) => $promise->resolve($value),
+            'reject' => fn ($reason) => $promise->reject($reason),
             'length' => $length ?? $this->chunkSize,
             'promise' => $promise,
         ];
@@ -89,19 +91,20 @@ class ReadableStreamHandler
             if ($item['promise'] === $promise) {
                 unset($this->readQueue[$index]);
                 $this->readQueue = array_values($this->readQueue);
+
                 break;
             }
         }
 
         // Pause if no more reads pending and no data listeners
-        if (empty($this->readQueue) && !($this->hasListenersCallback)('data')) {
+        if (empty($this->readQueue) && ! ($this->hasListenersCallback)('data')) {
             ($this->pauseCallback)();
         }
     }
 
     public function rejectAllPending(\Throwable $error): void
     {
-        while (!empty($this->readQueue)) {
+        while (! empty($this->readQueue)) {
             $item = array_shift($this->readQueue);
             $item['reject']($error);
         }
@@ -109,13 +112,13 @@ class ReadableStreamHandler
 
     public function startWatching(bool $readable, bool $paused, bool $closed): void
     {
-        if ($this->watcherId !== null || !$readable || $paused || $closed) {
+        if ($this->watcherId !== null || ! $readable || $paused || $closed) {
             return;
         }
 
         $this->watcherId = Loop::addStreamWatcher(
             $this->resource,
-            fn() => $this->handleReadable(),
+            fn () => $this->handleReadable(),
             'read'
         );
     }
@@ -136,7 +139,7 @@ class ReadableStreamHandler
         }
 
         $readLength = $this->chunkSize;
-        if (!empty($this->readQueue)) {
+        if (! empty($this->readQueue)) {
             $readLength = $this->readQueue[0]['length'] ?? $this->chunkSize;
         }
 
@@ -146,14 +149,15 @@ class ReadableStreamHandler
             $error = new StreamException('Failed to read from stream');
             ($this->emitCallback)('error', $error);
 
-            while (!empty($this->readQueue)) {
+            while (! empty($this->readQueue)) {
                 $item = array_shift($this->readQueue);
-                if (!$item['promise']->isCancelled()) {
+                if (! $item['promise']->isCancelled()) {
                     $item['reject']($error);
                 }
             }
 
             ($this->closeCallback)();
+
             return;
         }
 
@@ -161,14 +165,15 @@ class ReadableStreamHandler
         if ($data === '' && ($this->isEofCallback)()) {
             $this->stopWatching();
 
-            while (!empty($this->readQueue)) {
+            while (! empty($this->readQueue)) {
                 $item = array_shift($this->readQueue);
-                if (!$item['promise']->isCancelled()) {
+                if (! $item['promise']->isCancelled()) {
                     $item['resolve'](null);
                 }
             }
 
             ($this->emitCallback)('end');
+
             return;
         }
 
@@ -177,17 +182,17 @@ class ReadableStreamHandler
             ($this->emitCallback)('data', $data);
 
             // Resolve first pending read
-            if (!empty($this->readQueue)) {
+            if (! empty($this->readQueue)) {
                 $item = array_shift($this->readQueue);
-                if (!$item['promise']->isCancelled()) {
+                if (! $item['promise']->isCancelled()) {
                     $item['resolve']($data);
                 }
 
                 // Pause if no more reads pending and no data listeners
-                if (empty($this->readQueue) && !($this->hasListenersCallback)('data')) {
+                if (empty($this->readQueue) && ! ($this->hasListenersCallback)('data')) {
                     ($this->pauseCallback)();
                 }
-            } elseif (!($this->hasListenersCallback)('data')) {
+            } elseif (! ($this->hasListenersCallback)('data')) {
                 // No pending reads and no data listeners, pause
                 ($this->pauseCallback)();
             }
@@ -196,6 +201,6 @@ class ReadableStreamHandler
 
     public function shouldPauseAfterRead(): bool
     {
-        return empty($this->readQueue) && !($this->hasListenersCallback)('data');
+        return empty($this->readQueue) && ! ($this->hasListenersCallback)('data');
     }
 }

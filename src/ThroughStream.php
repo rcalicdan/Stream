@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hibla\Stream;
 
 use Hibla\Promise\CancellablePromise;
@@ -59,12 +61,13 @@ class ThroughStream implements DuplexStreamInterface
 
     public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
     {
-        if (!$this->isReadable()) {
+        if (! $this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
-        if (!$destination->isWritable()) {
+        if (! $destination->isWritable()) {
             $this->pause();
+
             return $this->createRejectedPromise(new StreamException('Destination is not writable'));
         }
 
@@ -133,7 +136,7 @@ class ThroughStream implements DuplexStreamInterface
 
     public function write(string $data): CancellablePromiseInterface
     {
-        if (!$this->isWritable()) {
+        if (! $this->isWritable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not writable'));
         }
 
@@ -168,7 +171,7 @@ class ThroughStream implements DuplexStreamInterface
 
     public function end(?string $data = null): CancellablePromiseInterface
     {
-        if (!$this->isWritable() || $this->ending) {
+        if (! $this->isWritable() || $this->ending) {
             return $this->createResolvedPromise(null);
         }
 
@@ -204,7 +207,7 @@ class ThroughStream implements DuplexStreamInterface
 
     public function pause(): void
     {
-        if (!$this->readable || $this->paused) {
+        if (! $this->readable || $this->paused) {
             return;
         }
 
@@ -214,7 +217,7 @@ class ThroughStream implements DuplexStreamInterface
 
     public function resume(): void
     {
-        if (!$this->readable || !$this->paused) {
+        if (! $this->readable || ! $this->paused) {
             return;
         }
 
@@ -229,12 +232,12 @@ class ThroughStream implements DuplexStreamInterface
 
     public function isReadable(): bool
     {
-        return $this->readable && !$this->closed;
+        return $this->readable && ! $this->closed;
     }
 
     public function isWritable(): bool
     {
-        return $this->writable && !$this->closed;
+        return $this->writable && ! $this->closed;
     }
 
     public function isEnding(): bool
@@ -244,7 +247,7 @@ class ThroughStream implements DuplexStreamInterface
 
     public function isEof(): bool
     {
-        return !$this->readable;
+        return ! $this->readable;
     }
 
     public function isPaused(): bool
@@ -270,7 +273,7 @@ class ThroughStream implements DuplexStreamInterface
 
     public function __destruct()
     {
-        if (!$this->closed) {
+        if (! $this->closed) {
             $this->close();
         }
     }

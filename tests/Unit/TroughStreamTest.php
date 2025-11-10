@@ -1,9 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 use Hibla\EventLoop\Loop;
+use Hibla\Stream\Exceptions\StreamException;
 use Hibla\Stream\ThroughStream;
 use Hibla\Stream\WritableStream;
-use Hibla\Stream\Exceptions\StreamException;
 
 describe('ThroughStream', function () {
     test('can be created without transformer', function () {
@@ -19,7 +21,7 @@ describe('ThroughStream', function () {
     });
 
     test('can be created with transformer', function () {
-        $stream = new ThroughStream(fn($data) => strtoupper($data));
+        $stream = new ThroughStream(fn ($data) => strtoupper($data));
 
         expect($stream->isReadable())->toBeTrue();
         expect($stream->isWritable())->toBeTrue();
@@ -76,7 +78,7 @@ describe('ThroughStream', function () {
     });
 
     test('transforms data when transformer is provided', function () {
-        $stream = new ThroughStream(fn($data) => strtoupper($data));
+        $stream = new ThroughStream(fn ($data) => strtoupper($data));
 
         $received = null;
         $stream->on('data', function ($data) use (&$received) {
@@ -91,7 +93,7 @@ describe('ThroughStream', function () {
     });
 
     test('transformer can modify data length', function () {
-        $stream = new ThroughStream(fn($data) => str_repeat($data, 2));
+        $stream = new ThroughStream(fn ($data) => str_repeat($data, 2));
 
         $received = null;
         $stream->on('data', function ($data) use (&$received) {
@@ -164,9 +166,10 @@ describe('ThroughStream', function () {
         $stream->end()->await();
 
         $rejected = false;
+
         try {
             $stream->write('test')->await();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $rejected = true;
             expect($e)->toBeInstanceOf(StreamException::class);
             expect($e->getMessage())->toContain('not writable');
@@ -181,9 +184,10 @@ describe('ThroughStream', function () {
         $stream->close();
 
         $rejected = false;
+
         try {
             $stream->write('test')->await();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $rejected = true;
             expect($e)->toBeInstanceOf(StreamException::class);
             expect($e->getMessage())->toContain('not writable');
@@ -234,7 +238,7 @@ describe('ThroughStream', function () {
         });
 
         $stream->pause();
-        $stream->write('test')->await(); 
+        $stream->write('test')->await();
         $stream->resume();
 
         expect($drained)->toBeTrue();
@@ -304,9 +308,10 @@ describe('ThroughStream', function () {
         $stream = new ThroughStream();
 
         $rejected = false;
+
         try {
             $stream->read()->await();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $rejected = true;
             expect($e)->toBeInstanceOf(StreamException::class);
             expect($e->getMessage())->toContain('does not support read()');
@@ -320,9 +325,10 @@ describe('ThroughStream', function () {
         $stream = new ThroughStream();
 
         $rejected = false;
+
         try {
             $stream->readLine()->await();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $rejected = true;
             expect($e)->toBeInstanceOf(StreamException::class);
             expect($e->getMessage())->toContain('does not support readLine()');
@@ -336,9 +342,10 @@ describe('ThroughStream', function () {
         $stream = new ThroughStream();
 
         $rejected = false;
+
         try {
             $stream->readAll()->await();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $rejected = true;
             expect($e)->toBeInstanceOf(StreamException::class);
             expect($e->getMessage())->toContain('does not support readAll()');
@@ -350,7 +357,7 @@ describe('ThroughStream', function () {
 
     test('emits error when transformer throws', function () {
         $stream = new ThroughStream(function ($data) {
-            throw new \Exception('Transform error');
+            throw new Exception('Transform error');
         });
 
         $error = null;
@@ -359,13 +366,14 @@ describe('ThroughStream', function () {
         });
 
         $rejected = false;
+
         try {
             $stream->write('test')->await();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $rejected = true;
         }
 
-        expect($error)->toBeInstanceOf(\Exception::class);
+        expect($error)->toBeInstanceOf(Exception::class);
         expect($error->getMessage())->toBe('Transform error');
         expect($rejected)->toBeTrue();
     });
@@ -465,9 +473,10 @@ describe('ThroughStream', function () {
         $stream->end()->await();
 
         $rejected = false;
+
         try {
             $stream->pipe($destination)->await();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $rejected = true;
             expect($e)->toBeInstanceOf(StreamException::class);
             expect($e->getMessage())->toContain('not readable');
@@ -508,7 +517,7 @@ describe('ThroughStream', function () {
 
         expect($received)->toBe([
             'chunk1', 'chunk2', 'chunk3', 'chunk4', 'chunk5',
-            'chunk6', 'chunk7', 'chunk8', 'chunk9', 'chunk10'
+            'chunk6', 'chunk7', 'chunk8', 'chunk9', 'chunk10',
         ]);
 
         $stream->close();
@@ -517,16 +526,17 @@ describe('ThroughStream', function () {
     test('removes all listeners on close', function () {
         $stream = new ThroughStream();
 
-        $stream->on('data', fn() => null);
-        $stream->on('end', fn() => null);
-        $stream->on('error', fn() => null);
+        $stream->on('data', fn () => null);
+        $stream->on('end', fn () => null);
+        $stream->on('error', fn () => null);
 
         $stream->close();
 
         $rejected = false;
+
         try {
             $stream->write('test')->await();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $rejected = true;
             expect($e)->toBeInstanceOf(StreamException::class);
         }
@@ -539,6 +549,7 @@ describe('ThroughStream', function () {
             if (str_starts_with($data, 'ERROR:')) {
                 return strtoupper($data);
             }
+
             return strtolower($data);
         });
 

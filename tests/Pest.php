@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Hibla\EventLoop\Loop;
 
 /*
@@ -28,7 +30,8 @@ expect()->extend('toBeResource', function () {
 
 expect()->extend('toBeSocketPair', function () {
     return $this->toBeArray()
-        ->and(count($this->value))->toBe(2);
+        ->and(count($this->value))->toBe(2)
+    ;
 });
 
 /*
@@ -43,6 +46,7 @@ function createTempFile(string $content = ''): string
     if ($content) {
         file_put_contents($file, $content);
     }
+
     return $file;
 }
 
@@ -80,13 +84,13 @@ function waitForLoop(int $milliseconds = 10): void
 function asyncTest(callable $test, int $timeoutMs = 5000): void
 {
     $completed = false;
-    
+
     Loop::addTimer($timeoutMs / 1000, function () use (&$completed) {
-        if (!$completed) {
-            throw new \RuntimeException('Test timeout');
+        if (! $completed) {
+            throw new RuntimeException('Test timeout');
         }
     });
-    
+
     Loop::nextTick(function () use ($test, &$completed) {
         try {
             $result = $test();
@@ -99,6 +103,7 @@ function asyncTest(callable $test, int $timeoutMs = 5000): void
                     function ($e) use (&$completed) {
                         $completed = true;
                         Loop::stop();
+
                         throw $e;
                     }
                 );
@@ -106,12 +111,13 @@ function asyncTest(callable $test, int $timeoutMs = 5000): void
                 $completed = true;
                 Loop::stop();
             }
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $completed = true;
             Loop::stop();
+
             throw $e;
         }
     });
-    
+
     Loop::run();
 }
