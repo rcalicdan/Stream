@@ -150,4 +150,11 @@ class DuplexStream implements DuplexStreamInterface
         $this->emit('close');
         $this->removeAllListeners();
     }
+
+    public function __destruct()
+    {
+        if (!$this->closed) {
+            $this->close();
+        }
+    }
 }

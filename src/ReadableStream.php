@@ -79,9 +79,9 @@ class ReadableStream implements ReadableStreamInterface
         $this->handler = new ReadableStreamHandler(
             $this->resource,
             $this->chunkSize,
-            function(string $event, ...$args) {
+            function (string $event, ...$args) {
                 $this->emit($event, ...$args);
-                
+
                 // Mark EOF after end event
                 if ($event === 'end') {
                     $this->eof = true;
@@ -244,5 +244,12 @@ class ReadableStream implements ReadableStreamInterface
 
         $this->emit('close');
         $this->removeAllListeners();
+    }
+
+    public function __destruct()
+    {
+        if (!$this->closed) {
+            $this->close();
+        }
     }
 }

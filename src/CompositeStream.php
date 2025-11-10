@@ -154,7 +154,7 @@ class CompositeStream implements DuplexStreamInterface
         }
 
         $this->readable->pause();
-        
+
         return $this->writable->end($data);
     }
 
@@ -196,5 +196,12 @@ class CompositeStream implements DuplexStreamInterface
     public function getWritable(): WritableStreamInterface
     {
         return $this->writable;
+    }
+
+    public function __destruct()
+    {
+        if (!$this->closed) {
+            $this->close();
+        }
     }
 }

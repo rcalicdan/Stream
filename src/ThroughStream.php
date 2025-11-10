@@ -112,7 +112,7 @@ class ThroughStream implements DuplexStreamInterface
             $this->off('data', $dataHandler);
             $this->off('end', $endHandler);
             $this->off('error', $errorHandler);
-            
+
             $promise->reject($error);
         };
 
@@ -266,5 +266,12 @@ class ThroughStream implements DuplexStreamInterface
 
         $this->emit('close');
         $this->removeAllListeners();
+    }
+
+    public function __destruct()
+    {
+        if (!$this->closed) {
+            $this->close();
+        }
     }
 }
