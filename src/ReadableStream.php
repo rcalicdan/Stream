@@ -21,7 +21,7 @@ class ReadableStream implements ReadableStreamInterface
     use PromiseHelperTrait;
     use EventEmitterTrait;
 
-    /** @var resource|null */
+    /** @var resource|null The underlying stream resource. */
     private $resource;
 
     private bool $readable = true;
@@ -36,8 +36,11 @@ class ReadableStream implements ReadableStreamInterface
     private PipeHandler $pipeHandler;
 
     /**
-     * @param resource $resource Stream resource
-     * @param int $chunkSize Default chunk size for reads
+     * Initializes the readable stream, validates the resource, and sets it to non-blocking mode.
+     * This constructor sets up the internal machinery required for async reading without blocking the event loop.
+     *
+     * @param resource $resource A readable PHP stream resource.
+     * @param int $chunkSize The default amount of data to read in a single operation.
      */
     public function __construct($resource, int $chunkSize = 65536)
     {
@@ -55,6 +58,173 @@ class ReadableStream implements ReadableStreamInterface
 
         $this->setupNonBlocking($resource, $meta);
         $this->initializeHandlers();
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function read(?int $length = null): CancellablePromiseInterface
+    {
+        if (! $this->isReadable()) {
+            return $this->createRejectedPromise(new StreamException('Stream is not readable'));
+        }
+
+        if ($this->eof) {
+            //@phpstan-ignore-next-line
+            return $this->createResolvedPromise(null);
+        }
+
+        /** @var CancellablePromise<string|null> $promise */
+        $promise = new CancellablePromise();
+
+        $this->handler->queueRead($length, $promise);
+
+        $promise->setCancelHandler(function () use ($promise): void {
+            $this->handler->cancelRead($promise);
+        });
+
+        if ($this->paused) {
+            $this->resume();
+        }
+
+        return $promise;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function readLine(?int $maxLength = null): CancellablePromiseInterface
+    {
+        if (! $this->isReadable()) {
+            return $this->createRejectedPromise(new StreamException('Stream is not readable'));
+        }
+
+        if ($this->eof && $this->handler->getBuffer() === '') {
+            //@phpstan-ignore-next-line
+            return $this->createResolvedPromise(null);
+        }
+
+        $maxLen = $maxLength ?? $this->chunkSize;
+        $buffer = $this->handler->getBuffer();
+
+        $line = $this->lineHandler->findLineInBuffer($buffer, $maxLen);
+        if ($line !== null) {
+            $this->handler->setBuffer($buffer);
+
+            //@phpstan-ignore-next-line
+            return $this->createResolvedPromise($line);
+        }
+
+        $this->handler->clearBuffer();
+
+        return $this->lineHandler->readLineFromStream($buffer, $maxLen);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function readAll(int $maxLength = 1048576): CancellablePromiseInterface
+    {
+        if (! $this->isReadable()) {
+            return $this->createRejectedPromise(new StreamException('Stream is not readable'));
+        }
+
+        $buffer = $this->handler->getBuffer();
+        $this->handler->clearBuffer();
+
+        return $this->allHandler->readAll($buffer, $maxLength);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
+    {
+        if (! $this->isReadable()) {
+            return $this->createRejectedPromise(new StreamException('Stream is not readable'));
+        }
+
+        if (! $destination->isWritable()) {
+            return $this->createRejectedPromise(new StreamException('Destination is not writable'));
+        }
+
+        return $this->pipeHandler->pipe($destination, $options);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function pause(): void
+    {
+        if (! $this->readable || $this->paused || $this->closed) {
+            return;
+        }
+
+        $this->paused = true;
+        $this->handler->stopWatching();
+        $this->emit('pause');
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function resume(): void
+    {
+        if (! $this->readable || ! $this->paused || $this->closed) {
+            return;
+        }
+
+        $this->paused = false;
+        $this->handler->startWatching($this->readable, $this->paused, $this->closed);
+        $this->emit('resume');
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function isReadable(): bool
+    {
+        return $this->readable && ! $this->closed;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function isEof(): bool
+    {
+        return $this->eof || ($this->resource !== null && is_resource($this->resource) && feof($this->resource));
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function isPaused(): bool
+    {
+        return $this->paused;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function close(): void
+    {
+        if ($this->closed) {
+            return;
+        }
+
+        $this->closed = true;
+        $this->readable = false;
+        $this->pause();
+
+        $this->handler->rejectAllPending(new StreamException('Stream closed'));
+
+        if ($this->resource !== null && is_resource($this->resource)) {
+            @fclose($this->resource);
+            $this->resource = null;
+        }
+
+        $this->emit('close');
+        $this->removeAllListeners();
     }
 
     /**
@@ -94,7 +264,6 @@ class ReadableStream implements ReadableStreamInterface
             function (string $event, ...$args): void {
                 $this->emit($event, ...$args);
 
-                // Mark EOF after end event
                 if ($event === 'end') {
                     $this->eof = true;
                 }
@@ -133,155 +302,6 @@ class ReadableStream implements ReadableStreamInterface
             fn () => $this->isReadable(),
             fn () => $this->isEof()
         );
-    }
-
-    /**
-     * @return CancellablePromiseInterface<string|null>
-     */
-    public function read(?int $length = null): CancellablePromiseInterface
-    {
-        if (! $this->isReadable()) {
-            return $this->createRejectedPromise(new StreamException('Stream is not readable'));
-        }
-
-        if ($this->eof) {
-            //@phpstan-ignore-next-line
-            return $this->createResolvedPromise(null);
-        }
-
-        /** @var CancellablePromise<string|null> $promise */
-        $promise = new CancellablePromise();
-
-        $this->handler->queueRead($length, $promise);
-
-        $promise->setCancelHandler(function () use ($promise): void {
-            $this->handler->cancelRead($promise);
-        });
-
-        if ($this->paused) {
-            $this->resume();
-        }
-
-        return $promise;
-    }
-
-    /**
-     * @return CancellablePromiseInterface<string|null>
-     */
-    public function readLine(?int $maxLength = null): CancellablePromiseInterface
-    {
-        if (! $this->isReadable()) {
-            return $this->createRejectedPromise(new StreamException('Stream is not readable'));
-        }
-
-        if ($this->eof && $this->handler->getBuffer() === '') {
-            //@phpstan-ignore-next-line
-            return $this->createResolvedPromise(null);
-        }
-
-        $maxLen = $maxLength ?? $this->chunkSize;
-        $buffer = $this->handler->getBuffer();
-
-        $line = $this->lineHandler->findLineInBuffer($buffer, $maxLen);
-        if ($line !== null) {
-            $this->handler->setBuffer($buffer);
-
-            //@phpstan-ignore-next-line
-            return $this->createResolvedPromise($line);
-        }
-
-        $this->handler->clearBuffer();
-
-        return $this->lineHandler->readLineFromStream($buffer, $maxLen);
-    }
-
-    /**
-     * @return CancellablePromiseInterface<string>
-     */
-    public function readAll(int $maxLength = 1048576): CancellablePromiseInterface
-    {
-        if (! $this->isReadable()) {
-            return $this->createRejectedPromise(new StreamException('Stream is not readable'));
-        }
-
-        $buffer = $this->handler->getBuffer();
-        $this->handler->clearBuffer();
-
-        return $this->allHandler->readAll($buffer, $maxLength);
-    }
-
-    /**
-     * @return CancellablePromiseInterface<int>
-     */
-    public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
-    {
-        if (! $this->isReadable()) {
-            return $this->createRejectedPromise(new StreamException('Stream is not readable'));
-        }
-
-        if (! $destination->isWritable()) {
-            return $this->createRejectedPromise(new StreamException('Destination is not writable'));
-        }
-
-        return $this->pipeHandler->pipe($destination, $options);
-    }
-
-    public function pause(): void
-    {
-        if (! $this->readable || $this->paused || $this->closed) {
-            return;
-        }
-
-        $this->paused = true;
-        $this->handler->stopWatching();
-        $this->emit('pause');
-    }
-
-    public function resume(): void
-    {
-        if (! $this->readable || ! $this->paused || $this->closed) {
-            return;
-        }
-
-        $this->paused = false;
-        $this->handler->startWatching($this->readable, $this->paused, $this->closed);
-        $this->emit('resume');
-    }
-
-    public function isReadable(): bool
-    {
-        return $this->readable && ! $this->closed;
-    }
-
-    public function isEof(): bool
-    {
-        return $this->eof || ($this->resource !== null && is_resource($this->resource) && feof($this->resource));
-    }
-
-    public function isPaused(): bool
-    {
-        return $this->paused;
-    }
-
-    public function close(): void
-    {
-        if ($this->closed) {
-            return;
-        }
-
-        $this->closed = true;
-        $this->readable = false;
-        $this->pause();
-
-        $this->handler->rejectAllPending(new StreamException('Stream closed'));
-
-        if ($this->resource !== null && is_resource($this->resource)) {
-            @fclose($this->resource);
-            $this->resource = null;
-        }
-
-        $this->emit('close');
-        $this->removeAllListeners();
     }
 
     public function __destruct()

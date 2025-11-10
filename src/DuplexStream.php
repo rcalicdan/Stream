@@ -57,53 +57,64 @@ class DuplexStream implements DuplexStreamInterface
     }
 
     /**
-     * @param ReadableStream|WritableStream $source
-     * @param array<string> $events
+     * @inheritdoc
      */
-    private function forwardEvents(object $source, array $events): void
-    {
-        foreach ($events as $event) {
-            $source->on($event, function (...$args) use ($event) {
-                $this->emit($event, ...$args);
-            });
-        }
-    }
-
     public function read(?int $length = null): CancellablePromiseInterface
     {
         return $this->readable->read($length);
     }
 
+    /**
+     * @inheritdoc
+     */
     public function readLine(?int $maxLength = null): CancellablePromiseInterface
     {
         return $this->readable->readLine($maxLength);
     }
 
+    /**
+     * @inheritdoc
+     */
     public function readAll(int $maxLength = 1048576): CancellablePromiseInterface
     {
         return $this->readable->readAll($maxLength);
     }
 
+    /**
+     * @inheritdoc
+     */
     public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
     {
         return $this->readable->pipe($destination, $options);
     }
 
+    /**
+     * @inheritdoc
+     */
     public function isReadable(): bool
     {
         return $this->readable->isReadable();
     }
 
+    /**
+     * @inheritdoc
+     */
     public function isEof(): bool
     {
         return $this->readable->isEof();
     }
 
+    /**
+     * @inheritdoc
+     */
     public function pause(): void
     {
         $this->readable->pause();
     }
 
+    /**
+     * @inheritdoc
+     */
     public function resume(): void
     {
         if ($this->writable->isWritable()) {
@@ -111,21 +122,33 @@ class DuplexStream implements DuplexStreamInterface
         }
     }
 
+    /**
+     * @inheritdoc
+     */
     public function isPaused(): bool
     {
         return $this->readable->isPaused();
     }
 
+    /**
+     * @inheritdoc
+     */
     public function write(string $data): CancellablePromiseInterface
     {
         return $this->writable->write($data);
     }
 
+    /**
+     * @inheritdoc
+     */
     public function writeLine(string $data): CancellablePromiseInterface
     {
         return $this->writable->writeLine($data);
     }
 
+    /**
+     * @inheritdoc
+     */
     public function end(?string $data = null): CancellablePromiseInterface
     {
         $this->readable->pause();
@@ -133,16 +156,25 @@ class DuplexStream implements DuplexStreamInterface
         return $this->writable->end($data);
     }
 
+    /**
+     * @inheritdoc
+     */
     public function isWritable(): bool
     {
         return $this->writable->isWritable();
     }
 
+    /**
+     * @inheritdoc
+     */
     public function isEnding(): bool
     {
         return $this->writable->isEnding();
     }
 
+    /**
+     * @inheritdoc
+     */
     public function close(): void
     {
         if ($this->closed) {
@@ -156,6 +188,19 @@ class DuplexStream implements DuplexStreamInterface
 
         $this->emit('close');
         $this->removeAllListeners();
+    }
+
+    /**
+     * @param ReadableStream|WritableStream $source
+     * @param array<string> $events
+     */
+    private function forwardEvents(object $source, array $events): void
+    {
+        foreach ($events as $event) {
+            $source->on($event, function (...$args) use ($event) {
+                $this->emit($event, ...$args);
+            });
+        }
     }
 
     public function __destruct()

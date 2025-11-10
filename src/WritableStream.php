@@ -12,12 +12,16 @@ use Hibla\Stream\Interfaces\WritableStreamInterface;
 use Hibla\Stream\Traits\EventEmitterTrait;
 use Hibla\Stream\Traits\PromiseHelperTrait;
 
+/**
+ * An implementation of a non-blocking writable stream for asynchronous I/O operations.
+ * It encapsulates a resource handle, manages a write buffer, and handles backpressure.
+ */
 class WritableStream implements WritableStreamInterface
 {
     use EventEmitterTrait;
     use PromiseHelperTrait;
 
-    /** @var resource|null */
+    /** @var resource|null The underlying stream resource. */
     private $resource;
 
     private bool $writable = true;
@@ -28,8 +32,11 @@ class WritableStream implements WritableStreamInterface
     private WritableStreamHandler $handler;
 
     /**
-     * @param resource $resource Stream resource
-     * @param int $softLimit Soft limit for write buffer (in bytes)
+     * Initializes the writable stream, validates the resource, and sets it to non-blocking mode.
+     * This prepares the stream for asynchronous writing without halting the event loop.
+     *
+     * @param resource $resource A writable PHP stream resource.
+     * @param int $softLimit The size of the write buffer (in bytes) at which backpressure is applied.
      */
     public function __construct($resource, int $softLimit = 65536)
     {
@@ -60,41 +67,8 @@ class WritableStream implements WritableStreamInterface
     }
 
     /**
-     * @param resource $resource
-     * @param array<string, mixed> $meta
+     * @inheritdoc
      */
-    private function setupNonBlocking($resource, array $meta): void
-    {
-        $streamType = $meta['stream_type'] ?? '';
-        $isWindows = DIRECTORY_SEPARATOR === '\\' || stripos(PHP_OS, 'WIN') === 0;
-
-        $shouldSetNonBlocking = false;
-
-        if (in_array($streamType, ['tcp_socket', 'udp_socket', 'unix_socket', 'ssl_socket', 'TCP/IP', 'tcp_socket/ssl'], true)) {
-            $shouldSetNonBlocking = true;
-        } elseif (! $isWindows && in_array($streamType, ['STDIO', 'PLAINFILE', 'TEMP', 'MEMORY'], true)) {
-            $shouldSetNonBlocking = true;
-        }
-
-        if ($shouldSetNonBlocking) {
-            @stream_set_blocking($resource, false);
-        }
-    }
-
-    private function initializeHandler(): void
-    {
-        if ($this->resource === null) {
-            throw new StreamException('Resource is null during handler initialization');
-        }
-
-        $this->handler = new WritableStreamHandler(
-            $this->resource,
-            $this->softLimit,
-            fn (string $event, mixed ...$args) => $this->emit($event, ...$args),
-            fn () => $this->close()
-        );
-    }
-
     public function write(string $data): CancellablePromiseInterface
     {
         if (! $this->writable && ! $this->ending) {
@@ -123,11 +97,17 @@ class WritableStream implements WritableStreamInterface
         return $promise;
     }
 
+    /**
+     * @inheritdoc
+     */
     public function writeLine(string $data): CancellablePromiseInterface
     {
         return $this->write($data . "\n");
     }
 
+    /**
+     * @inheritdoc
+     */
     public function end(?string $data = null): CancellablePromiseInterface
     {
         if ($this->ending || $this->closed) {
@@ -169,16 +149,25 @@ class WritableStream implements WritableStreamInterface
         return $promise;
     }
 
+    /**
+     * @inheritdoc
+     */
     public function isWritable(): bool
     {
         return $this->writable && ! $this->closed;
     }
 
+    /**
+     * @inheritdoc
+     */
     public function isEnding(): bool
     {
         return $this->ending;
     }
 
+    /**
+     * @inheritdoc
+     */
     public function close(): void
     {
         if ($this->closed) {
@@ -261,6 +250,42 @@ class WritableStream implements WritableStreamInterface
         });
 
         return $promise;
+    }
+
+    /**
+     * @param resource $resource
+     * @param array<string, mixed> $meta
+     */
+    private function setupNonBlocking($resource, array $meta): void
+    {
+        $streamType = $meta['stream_type'] ?? '';
+        $isWindows = DIRECTORY_SEPARATOR === '\\' || stripos(PHP_OS, 'WIN') === 0;
+
+        $shouldSetNonBlocking = false;
+
+        if (in_array($streamType, ['tcp_socket', 'udp_socket', 'unix_socket', 'ssl_socket', 'TCP/IP', 'tcp_socket/ssl'], true)) {
+            $shouldSetNonBlocking = true;
+        } elseif (! $isWindows && in_array($streamType, ['STDIO', 'PLAINFILE', 'TEMP', 'MEMORY'], true)) {
+            $shouldSetNonBlocking = true;
+        }
+
+        if ($shouldSetNonBlocking) {
+            @stream_set_blocking($resource, false);
+        }
+    }
+
+    private function initializeHandler(): void
+    {
+        if ($this->resource === null) {
+            throw new StreamException('Resource is null during handler initialization');
+        }
+
+        $this->handler = new WritableStreamHandler(
+            $this->resource,
+            $this->softLimit,
+            fn (string $event, mixed ...$args) => $this->emit($event, ...$args),
+            fn () => $this->close()
+        );
     }
 
     public function __destruct()

@@ -12,9 +12,6 @@ use Hibla\Stream\Interfaces\WritableStreamInterface;
 use Hibla\Stream\Traits\EventEmitterTrait;
 use Hibla\Stream\Traits\PromiseHelperTrait;
 
-/**
- * ThroughStream - A transform stream that processes data through a callback
- */
 class ThroughStream implements DuplexStreamInterface
 {
     use EventEmitterTrait;
@@ -27,38 +24,65 @@ class ThroughStream implements DuplexStreamInterface
     private bool $ending = false;
     private bool $draining = false;
 
-    /** @var callable(string): string|null */
-    private $transformer;
-
     /**
-     * @param callable(string): string|null $transformer Function to transform data: fn(string $data): string
+     * Initializes the transform stream with an optional callback.
+     * If provided, this callback will be applied to every chunk of data written to the stream before it is emitted.
+     *
+     * @param callable(string): string|null $transformer A function to process each data chunk.
      */
-    public function __construct(?callable $transformer = null)
-    {
-        $this->transformer = $transformer;
+    public function __construct(
+        private $transformer = null
+    ) {
     }
 
+    /**
+     * This operation is not supported on a ThroughStream.
+     * A ThroughStream does not have an underlying resource to actively read from; it only emits data
+     * that has been written to it. To consume data, pipe this stream to a writable destination
+     * or listen for the 'data' event.
+     *
+     * @throws StreamException Always.
+     */
     public function read(?int $length = null): CancellablePromiseInterface
     {
         return $this->createRejectedPromise(
-            new StreamException('ThroughStream does not support read() method. Use event listeners.')
+            new StreamException('ThroughStream does not support read() method. Use pipe() or event listeners.')
         );
     }
 
+    /**
+     * This operation is not supported on a ThroughStream.
+     * A ThroughStream does not have an underlying resource to actively read from; it only emits data
+     * that has been written to it. To consume data, pipe this stream to a writable destination
+     * or listen for the 'data' event.
+     *
+     * @throws StreamException Always.
+     */
     public function readLine(?int $maxLength = null): CancellablePromiseInterface
     {
         return $this->createRejectedPromise(
-            new StreamException('ThroughStream does not support readLine() method. Use event listeners.')
+            new StreamException('ThroughStream does not support readLine() method. Use pipe() or event listeners.')
         );
     }
 
+    /**
+     * This operation is not supported on a ThroughStream.
+     * A ThroughStream does not have an underlying resource to actively read from; it only emits data
+     * that has been written to it. To consume data, pipe this stream to a writable destination
+     * or listen for the 'data' event.
+     *
+     * @throws StreamException Always.
+     */
     public function readAll(int $maxLength = 1048576): CancellablePromiseInterface
     {
         return $this->createRejectedPromise(
-            new StreamException('ThroughStream does not support readAll() method. Use event listeners.')
+            new StreamException('ThroughStream does not support readAll() method. Use pipe() or event listeners.')
         );
     }
 
+    /**
+     * @inheritdoc
+     */
     public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
     {
         if (! $this->isReadable()) {
@@ -148,6 +172,9 @@ class ThroughStream implements DuplexStreamInterface
         return $promise;
     }
 
+    /**
+     * @inheritdoc
+     */
     public function write(string $data): CancellablePromiseInterface
     {
         if (! $this->isWritable()) {
@@ -180,11 +207,17 @@ class ThroughStream implements DuplexStreamInterface
         return $promise;
     }
 
+    /**
+     * @inheritdoc
+     */
     public function writeLine(string $data): CancellablePromiseInterface
     {
         return $this->write($data . "\n");
     }
 
+    /**
+     * @inheritdoc
+     */
     public function end(?string $data = null): CancellablePromiseInterface
     {
         if (! $this->isWritable() || $this->ending) {
@@ -223,6 +256,9 @@ class ThroughStream implements DuplexStreamInterface
         return $promise;
     }
 
+    /**
+     * @inheritdoc
+     */
     public function pause(): void
     {
         if (! $this->readable || $this->paused) {
@@ -233,6 +269,9 @@ class ThroughStream implements DuplexStreamInterface
         $this->emit('pause');
     }
 
+    /**
+     * @inheritdoc
+     */
     public function resume(): void
     {
         if (! $this->readable || ! $this->paused) {
@@ -248,26 +287,41 @@ class ThroughStream implements DuplexStreamInterface
         }
     }
 
+    /**
+     * @inheritdoc
+     */
     public function isReadable(): bool
     {
         return $this->readable && ! $this->closed;
     }
 
+    /**
+     * @inheritdoc
+     */
     public function isWritable(): bool
     {
         return $this->writable && ! $this->closed;
     }
 
+    /**
+     * @inheritdoc
+     */
     public function isEnding(): bool
     {
         return $this->ending;
     }
 
+    /**
+     * @inheritdoc
+     */
     public function isEof(): bool
     {
         return ! $this->readable;
     }
 
+    /**
+     * @inheritdoc
+     */
     public function isPaused(): bool
     {
         return $this->paused;

@@ -22,6 +22,8 @@ class CompositeStream implements DuplexStreamInterface
     private bool $closed = false;
 
     /**
+     * Creates a duplex stream from separate readable and writable streams.
+     *
      * @param ReadableStreamInterface $readable The readable side of the stream
      * @param WritableStreamInterface $writable The writable side of the stream
      */
@@ -33,6 +35,191 @@ class CompositeStream implements DuplexStreamInterface
         $this->writable = $writable;
 
         $this->setupEventForwarding();
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function read(?int $length = null): CancellablePromiseInterface
+    {
+        if ($this->closed) {
+            return $this->createRejectedPromise(new StreamException('Stream is closed'));
+        }
+
+        return $this->readable->read($length);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function readLine(?int $maxLength = null): CancellablePromiseInterface
+    {
+        if ($this->closed) {
+            return $this->createRejectedPromise(new StreamException('Stream is closed'));
+        }
+
+        return $this->readable->readLine($maxLength);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function readAll(int $maxLength = 1048576): CancellablePromiseInterface
+    {
+        if ($this->closed) {
+            return $this->createRejectedPromise(new StreamException('Stream is closed'));
+        }
+
+        return $this->readable->readAll($maxLength);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
+    {
+        if ($this->closed) {
+            return $this->createRejectedPromise(new StreamException('Stream is closed'));
+        }
+
+        return $this->readable->pipe($destination, $options);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function isReadable(): bool
+    {
+        return ! $this->closed && $this->readable->isReadable();
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function isEof(): bool
+    {
+        return $this->readable->isEof();
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function pause(): void
+    {
+        if (! $this->closed) {
+            $this->readable->pause();
+        }
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function resume(): void
+    {
+        if (! $this->closed && $this->writable->isWritable()) {
+            $this->readable->resume();
+        }
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function isPaused(): bool
+    {
+        return $this->readable->isPaused();
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function write(string $data): CancellablePromiseInterface
+    {
+        if ($this->closed) {
+            return $this->createRejectedPromise(new StreamException('Stream is closed'));
+        }
+
+        return $this->writable->write($data);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function writeLine(string $data): CancellablePromiseInterface
+    {
+        if ($this->closed) {
+            return $this->createRejectedPromise(new StreamException('Stream is closed'));
+        }
+
+        return $this->writable->writeLine($data);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function end(?string $data = null): CancellablePromiseInterface
+    {
+        if ($this->closed) {
+            return $this->createResolvedVoidPromise();
+        }
+
+        $this->readable->pause();
+
+        return $this->writable->end($data);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function isWritable(): bool
+    {
+        return ! $this->closed && $this->writable->isWritable();
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function isEnding(): bool
+    {
+        return $this->writable->isEnding();
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function close(): void
+    {
+        if ($this->closed) {
+            return;
+        }
+
+        $this->closed = true;
+
+        if ($this->readable->isReadable()) {
+            $this->readable->close();
+        }
+
+        if ($this->writable->isWritable()) {
+            $this->writable->close();
+        }
+
+        $this->emit('close');
+        $this->removeAllListeners();
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function getReadable(): ReadableStreamInterface
+    {
+        return $this->readable;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function getWritable(): WritableStreamInterface
+    {
+        return $this->writable;
     }
 
     private function setupEventForwarding(): void
@@ -67,140 +254,6 @@ class CompositeStream implements DuplexStreamInterface
                 $this->emit($event, ...$args);
             });
         }
-    }
-
-    public function read(?int $length = null): CancellablePromiseInterface
-    {
-        if ($this->closed) {
-            return $this->createRejectedPromise(new StreamException('Stream is closed'));
-        }
-
-        return $this->readable->read($length);
-    }
-
-    public function readLine(?int $maxLength = null): CancellablePromiseInterface
-    {
-        if ($this->closed) {
-            return $this->createRejectedPromise(new StreamException('Stream is closed'));
-        }
-
-        return $this->readable->readLine($maxLength);
-    }
-
-    public function readAll(int $maxLength = 1048576): CancellablePromiseInterface
-    {
-        if ($this->closed) {
-            return $this->createRejectedPromise(new StreamException('Stream is closed'));
-        }
-
-        return $this->readable->readAll($maxLength);
-    }
-
-    public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
-    {
-        if ($this->closed) {
-            return $this->createRejectedPromise(new StreamException('Stream is closed'));
-        }
-
-        return $this->readable->pipe($destination, $options);
-    }
-
-    public function isReadable(): bool
-    {
-        return ! $this->closed && $this->readable->isReadable();
-    }
-
-    public function isEof(): bool
-    {
-        return $this->readable->isEof();
-    }
-
-    public function pause(): void
-    {
-        if (! $this->closed) {
-            $this->readable->pause();
-        }
-    }
-
-    public function resume(): void
-    {
-        if (! $this->closed && $this->writable->isWritable()) {
-            $this->readable->resume();
-        }
-    }
-
-    public function isPaused(): bool
-    {
-        return $this->readable->isPaused();
-    }
-
-    public function write(string $data): CancellablePromiseInterface
-    {
-        if ($this->closed) {
-            return $this->createRejectedPromise(new StreamException('Stream is closed'));
-        }
-
-        return $this->writable->write($data);
-    }
-
-    public function writeLine(string $data): CancellablePromiseInterface
-    {
-        if ($this->closed) {
-            return $this->createRejectedPromise(new StreamException('Stream is closed'));
-        }
-
-        return $this->writable->writeLine($data);
-    }
-
-    public function end(?string $data = null): CancellablePromiseInterface
-    {
-        if ($this->closed) {
-            return $this->createResolvedVoidPromise();
-        }
-
-        $this->readable->pause();
-
-        return $this->writable->end($data);
-    }
-
-    public function isWritable(): bool
-    {
-        return ! $this->closed && $this->writable->isWritable();
-    }
-
-    public function isEnding(): bool
-    {
-        return $this->writable->isEnding();
-    }
-
-    public function close(): void
-    {
-        if ($this->closed) {
-            return;
-        }
-
-        $this->closed = true;
-
-        if ($this->readable->isReadable()) {
-            $this->readable->close();
-        }
-
-        if ($this->writable->isWritable()) {
-            $this->writable->close();
-        }
-
-        $this->emit('close');
-        $this->removeAllListeners();
-    }
-
-    public function getReadable(): ReadableStreamInterface
-    {
-        return $this->readable;
-    }
-
-    public function getWritable(): WritableStreamInterface
-    {
-        return $this->writable;
     }
 
     public function __destruct()

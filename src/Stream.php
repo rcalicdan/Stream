@@ -12,7 +12,8 @@ use Hibla\Stream\Interfaces\WritableStreamInterface;
 class Stream
 {
     /**
-     * Create a readable stream from a file path
+     * Creates a stream to process a file's contents without loading the entire file into memory.
+     * This is ideal for reading large files asynchronously.
      */
     public static function readableFile(string $path, int $chunkSize = 65536): ReadableStreamInterface
     {
@@ -26,7 +27,8 @@ class Stream
     }
 
     /**
-     * Create a writable stream from a file path
+     * Creates a stream to write data to a file asynchronously.
+     * This is useful for efficiently piping data from another source directly to the filesystem.
      */
     public static function writableFile(string $path, bool $append = false, int $softLimit = 65536): WritableStreamInterface
     {
@@ -41,7 +43,8 @@ class Stream
     }
 
     /**
-     * Create a duplex stream from a file path
+     * Creates a stream for performing both read and write operations on the same file handle.
+     * This is necessary for tasks like updating a file in place.
      */
     public static function duplexFile(string $path, int $readChunkSize = 65536, int $writeSoftLimit = 65536): DuplexStreamInterface
     {
@@ -55,7 +58,8 @@ class Stream
     }
 
     /**
-     * Create a readable stream from a resource
+     * Wraps an existing PHP stream resource with the non-blocking, event-driven `ReadableStreamInterface`.
+     * Use this to adapt generic resources like sockets or in-memory streams for use in an async application.
      *
      * @param resource $resource
      */
@@ -65,7 +69,8 @@ class Stream
     }
 
     /**
-     * Create a writable stream from a resource
+     * Provides a non-blocking, event-driven interface for writing to an existing PHP stream resource.
+     * This adds important features like backpressure handling to a generic writable resource.
      *
      * @param resource $resource
      */
@@ -75,7 +80,7 @@ class Stream
     }
 
     /**
-     * Create a duplex stream from a resource
+     * Manages a single read-write capable resource (like a TCP socket) with a unified, non-blocking interface.
      *
      * @param resource $resource
      */
@@ -85,7 +90,8 @@ class Stream
     }
 
     /**
-     * Create a composite stream from separate readable and writable streams
+     * Combines two independent, one-way streams into a single logical duplex stream.
+     * This is essential for scenarios like process I/O where STDIN and STDOUT are separate resources.
      */
     public static function composite(
         ReadableStreamInterface $readable,
@@ -95,7 +101,8 @@ class Stream
     }
 
     /**
-     * Create a through stream with optional transformer
+     * Creates a stream that can be placed in the middle of a pipe chain to modify data as it passes through.
+     * This is perfect for tasks like filtering, compression, or protocol encoding.
      */
     public static function through(?callable $transformer = null): ThroughStream
     {
@@ -103,7 +110,7 @@ class Stream
     }
 
     /**
-     * Get STDIN as a readable stream
+     * Provides a non-blocking stream to consume input from the standard input of a process.
      */
     public static function stdin(int $chunkSize = 8192): ReadableStreamInterface
     {
@@ -111,7 +118,7 @@ class Stream
     }
 
     /**
-     * Get STDOUT as a writable stream
+     * Provides an asynchronous stream to write to the standard output of a process, respecting backpressure.
      */
     public static function stdout(int $softLimit = 65536): WritableStreamInterface
     {
@@ -119,7 +126,7 @@ class Stream
     }
 
     /**
-     * Get STDERR as a writable stream
+     * Provides an asynchronous stream for writing error information to the standard error output of a process.
      */
     public static function stderr(int $softLimit = 65536): WritableStreamInterface
     {
@@ -127,7 +134,8 @@ class Stream
     }
 
     /**
-     * Create a composite stream from STDIN and STDOUT
+     * Models the standard I/O of a command-line application as a single duplex stream.
+     * This simplifies the handling of interactive console input and output.
      */
     public static function stdio(int $readChunkSize = 8192, int $writeSoftLimit = 65536): DuplexStreamInterface
     {
