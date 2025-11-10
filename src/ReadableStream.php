@@ -57,6 +57,10 @@ class ReadableStream implements ReadableStreamInterface
         $this->initializeHandlers();
     }
 
+    /**
+     * @param resource $resource
+     * @param array<string, mixed> $meta
+     */
     private function setupNonBlocking($resource, array $meta): void
     {
         $streamType = $meta['stream_type'] ?? '';
@@ -64,9 +68,9 @@ class ReadableStream implements ReadableStreamInterface
 
         $shouldSetNonBlocking = false;
 
-        if (in_array($streamType, ['tcp_socket', 'udp_socket', 'unix_socket', 'ssl_socket', 'TCP/IP', 'tcp_socket/ssl'])) {
+        if (in_array($streamType, ['tcp_socket', 'udp_socket', 'unix_socket', 'ssl_socket', 'TCP/IP', 'tcp_socket/ssl'], true)) {
             $shouldSetNonBlocking = true;
-        } elseif (! $isWindows && in_array($streamType, ['STDIO', 'PLAINFILE', 'TEMP', 'MEMORY'])) {
+        } elseif (! $isWindows && in_array($streamType, ['STDIO', 'PLAINFILE', 'TEMP', 'MEMORY'], true)) {
             $shouldSetNonBlocking = true;
         }
 
@@ -78,10 +82,16 @@ class ReadableStream implements ReadableStreamInterface
 
     private function initializeHandlers(): void
     {
+        if ($this->resource === null) {
+            throw new StreamException('Resource is null during handler initialization');
+        }
+
+        $resource = $this->resource;
+
         $this->handler = new ReadableStreamHandler(
-            $this->resource,
+            $resource,
             $this->chunkSize,
-            function (string $event, ...$args) {
+            function (string $event, ...$args): void {
                 $this->emit($event, ...$args);
 
                 // Mark EOF after end event
@@ -90,7 +100,9 @@ class ReadableStream implements ReadableStreamInterface
                 }
             },
             fn () => $this->close(),
-            fn () => feof($this->resource),
+            function () use ($resource) {
+                return is_resource($resource) && feof($resource);
+            },
             fn () => $this->pause(),
             fn () => $this->paused,
             fn (string $event) => $this->hasListeners($event)
@@ -107,9 +119,15 @@ class ReadableStream implements ReadableStreamInterface
         );
 
         $this->pipeHandler = new PipeHandler(
-            fn (string $event, callable $callback) => $this->on($event, $callback),
-            fn (string $event, callable $callback) => $this->off($event, $callback),
-            fn (string $event, ...$args) => $this->emit($event, ...$args),
+            function (string $event, callable $callback): void {
+                $this->on($event, $callback);
+            },
+            function (string $event, callable $callback): void {
+                $this->off($event, $callback);
+            },
+            function (string $event, ...$args): void {
+                $this->emit($event, ...$args);
+            },
             fn () => $this->pause(),
             fn () => $this->resume(),
             fn () => $this->isReadable(),
@@ -117,6 +135,9 @@ class ReadableStream implements ReadableStreamInterface
         );
     }
 
+    /**
+     * @return CancellablePromiseInterface<string|null>
+     */
     public function read(?int $length = null): CancellablePromiseInterface
     {
         if (! $this->isReadable()) {
@@ -124,14 +145,16 @@ class ReadableStream implements ReadableStreamInterface
         }
 
         if ($this->eof) {
+            //@phpstan-ignore-next-line
             return $this->createResolvedPromise(null);
         }
 
+        /** @var CancellablePromise<string|null> $promise */
         $promise = new CancellablePromise();
 
         $this->handler->queueRead($length, $promise);
 
-        $promise->setCancelHandler(function () use ($promise) {
+        $promise->setCancelHandler(function () use ($promise): void {
             $this->handler->cancelRead($promise);
         });
 
@@ -142,13 +165,17 @@ class ReadableStream implements ReadableStreamInterface
         return $promise;
     }
 
+    /**
+     * @return CancellablePromiseInterface<string|null>
+     */
     public function readLine(?int $maxLength = null): CancellablePromiseInterface
     {
         if (! $this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
-        if ($this->eof && empty($this->handler->getBuffer())) {
+        if ($this->eof && $this->handler->getBuffer() === '') {
+            //@phpstan-ignore-next-line
             return $this->createResolvedPromise(null);
         }
 
@@ -159,6 +186,7 @@ class ReadableStream implements ReadableStreamInterface
         if ($line !== null) {
             $this->handler->setBuffer($buffer);
 
+            //@phpstan-ignore-next-line
             return $this->createResolvedPromise($line);
         }
 
@@ -167,6 +195,9 @@ class ReadableStream implements ReadableStreamInterface
         return $this->lineHandler->readLineFromStream($buffer, $maxLen);
     }
 
+    /**
+     * @return CancellablePromiseInterface<string>
+     */
     public function readAll(int $maxLength = 1048576): CancellablePromiseInterface
     {
         if (! $this->isReadable()) {
@@ -179,6 +210,9 @@ class ReadableStream implements ReadableStreamInterface
         return $this->allHandler->readAll($buffer, $maxLength);
     }
 
+    /**
+     * @return CancellablePromiseInterface<int>
+     */
     public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
     {
         if (! $this->isReadable()) {
@@ -221,7 +255,7 @@ class ReadableStream implements ReadableStreamInterface
 
     public function isEof(): bool
     {
-        return $this->eof || ($this->resource && feof($this->resource));
+        return $this->eof || ($this->resource !== null && is_resource($this->resource) && feof($this->resource));
     }
 
     public function isPaused(): bool
@@ -241,7 +275,7 @@ class ReadableStream implements ReadableStreamInterface
 
         $this->handler->rejectAllPending(new StreamException('Stream closed'));
 
-        if (is_resource($this->resource)) {
+        if ($this->resource !== null && is_resource($this->resource)) {
             @fclose($this->resource);
             $this->resource = null;
         }

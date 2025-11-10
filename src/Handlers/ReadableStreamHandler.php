@@ -16,38 +16,30 @@ class ReadableStreamHandler
     private string $buffer = '';
     private ?string $watcherId = null;
 
-    /** @var array<array{resolve: callable, reject: callable, length: ?int, promise: CancellablePromiseInterface}> */
+    /** @var array<array{resolve: callable(string|null): void, reject: callable(\Throwable): void, length: int, promise: CancellablePromiseInterface<string|null>}> */
     private array $readQueue = [];
-
-    // Callbacks to interact with the stream
-    private $emitCallback;
-    private $closeCallback;
-    private $isEofCallback;
-    private $pauseCallback;
-    private $isPausedCallback;
-    private $hasListenersCallback;
 
     /**
      * @param resource $resource
+     * @param callable(string, mixed=): void $emitCallback
+     * @param callable(): void $closeCallback
+     * @param callable(): bool $isEofCallback
+     * @param callable(): void $pauseCallback
+     * @param callable(): bool $isPausedCallback
+     * @param callable(string): bool $hasListenersCallback
      */
     public function __construct(
         $resource,
         int $chunkSize,
-        callable $emitCallback,
-        callable $closeCallback,
-        callable $isEofCallback,
-        callable $pauseCallback,
-        callable $isPausedCallback,
-        callable $hasListenersCallback
+        private $emitCallback,
+        private $closeCallback,
+        private $isEofCallback,
+        private $pauseCallback,
+        private $isPausedCallback,
+        private $hasListenersCallback
     ) {
         $this->resource = $resource;
         $this->chunkSize = $chunkSize;
-        $this->emitCallback = $emitCallback;
-        $this->closeCallback = $closeCallback;
-        $this->isEofCallback = $isEofCallback;
-        $this->pauseCallback = $pauseCallback;
-        $this->isPausedCallback = $isPausedCallback;
-        $this->hasListenersCallback = $hasListenersCallback;
     }
 
     public function getBuffer(): string
@@ -72,19 +64,25 @@ class ReadableStreamHandler
 
     public function hasQueuedReads(): bool
     {
-        return ! empty($this->readQueue);
+        return $this->readQueue !== [];
     }
 
+    /**
+     * @param CancellablePromiseInterface<string|null> $promise
+     */
     public function queueRead(?int $length, CancellablePromiseInterface $promise): void
     {
         $this->readQueue[] = [
-            'resolve' => fn ($value) => $promise->resolve($value),
-            'reject' => fn ($reason) => $promise->reject($reason),
+            'resolve' => fn (string|null $value) => $promise->resolve($value),
+            'reject' => fn (\Throwable $reason) => $promise->reject($reason),
             'length' => $length ?? $this->chunkSize,
             'promise' => $promise,
         ];
     }
 
+    /**
+     * @param CancellablePromiseInterface<string|null> $promise
+     */
     public function cancelRead(CancellablePromiseInterface $promise): void
     {
         foreach ($this->readQueue as $index => $item) {
@@ -97,14 +95,14 @@ class ReadableStreamHandler
         }
 
         // Pause if no more reads pending and no data listeners
-        if (empty($this->readQueue) && ! ($this->hasListenersCallback)('data')) {
+        if ($this->readQueue === [] && ! ($this->hasListenersCallback)('data')) {
             ($this->pauseCallback)();
         }
     }
 
     public function rejectAllPending(\Throwable $error): void
     {
-        while (! empty($this->readQueue)) {
+        while ($this->readQueue !== []) {
             $item = array_shift($this->readQueue);
             $item['reject']($error);
         }
@@ -133,23 +131,22 @@ class ReadableStreamHandler
 
     public function handleReadable(): void
     {
-        // Check if paused (important - don't read if paused)
         if (($this->isPausedCallback)()) {
             return;
         }
 
         $readLength = $this->chunkSize;
-        if (! empty($this->readQueue)) {
-            $readLength = $this->readQueue[0]['length'] ?? $this->chunkSize;
+        if ($this->readQueue !== []) {
+            $readLength = $this->readQueue[0]['length'];
         }
 
-        $data = @fread($this->resource, $readLength);
+        $data = @fread($this->resource, max(1, $readLength));
 
         if ($data === false) {
             $error = new StreamException('Failed to read from stream');
             ($this->emitCallback)('error', $error);
 
-            while (! empty($this->readQueue)) {
+            while ($this->readQueue !== []) {
                 $item = array_shift($this->readQueue);
                 if (! $item['promise']->isCancelled()) {
                     $item['reject']($error);
@@ -161,11 +158,10 @@ class ReadableStreamHandler
             return;
         }
 
-        // Check for EOF
         if ($data === '' && ($this->isEofCallback)()) {
             $this->stopWatching();
 
-            while (! empty($this->readQueue)) {
+            while ($this->readQueue !== []) {
                 $item = array_shift($this->readQueue);
                 if (! $item['promise']->isCancelled()) {
                     $item['resolve'](null);
@@ -178,18 +174,17 @@ class ReadableStreamHandler
         }
 
         if ($data !== '') {
-            // Emit data event
             ($this->emitCallback)('data', $data);
 
             // Resolve first pending read
-            if (! empty($this->readQueue)) {
+            if ($this->readQueue !== []) {
                 $item = array_shift($this->readQueue);
                 if (! $item['promise']->isCancelled()) {
                     $item['resolve']($data);
                 }
 
                 // Pause if no more reads pending and no data listeners
-                if (empty($this->readQueue) && ! ($this->hasListenersCallback)('data')) {
+                if ($this->readQueue === [] && ! ($this->hasListenersCallback)('data')) {
                     ($this->pauseCallback)();
                 }
             } elseif (! ($this->hasListenersCallback)('data')) {
@@ -201,6 +196,6 @@ class ReadableStreamHandler
 
     public function shouldPauseAfterRead(): bool
     {
-        return empty($this->readQueue) && ! ($this->hasListenersCallback)('data');
+        return $this->readQueue === [] && ! ($this->hasListenersCallback)('data');
     }
 }

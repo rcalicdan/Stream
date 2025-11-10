@@ -12,40 +12,39 @@ use Hibla\Stream\Interfaces\WritableStreamInterface;
 
 class PipeHandler
 {
-    private $onCallback;
-    private $offCallback;
-    private $emitCallback;
-    private $pauseCallback;
-    private $resumeCallback;
-    private $isReadableCallback;
-    private $isEofCallback;
-
+    /**
+     * @param callable(string, callable): void $onCallback
+     * @param callable(string, callable): void $offCallback
+     * @param callable(string, mixed): void $emitCallback
+     * @param callable(): void $pauseCallback
+     * @param callable(): void $resumeCallback
+     * @param callable(): bool $isReadableCallback
+     * @param callable(): bool $isEofCallback
+     */
     public function __construct(
-        callable $onCallback,
-        callable $offCallback,
-        callable $emitCallback,
-        callable $pauseCallback,
-        callable $resumeCallback,
-        callable $isReadableCallback,
-        callable $isEofCallback
+        private $onCallback,
+        private $offCallback,
+        private $emitCallback,
+        private $pauseCallback,
+        private $resumeCallback,
+        private $isReadableCallback,
+        private $isEofCallback
     ) {
-        $this->onCallback = $onCallback;
-        $this->offCallback = $offCallback;
-        $this->emitCallback = $emitCallback;
-        $this->pauseCallback = $pauseCallback;
-        $this->resumeCallback = $resumeCallback;
-        $this->isReadableCallback = $isReadableCallback;
-        $this->isEofCallback = $isEofCallback;
     }
 
+    /**
+     * @param array{end?: bool} $options
+     * @return CancellablePromiseInterface<int>
+     */
     public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
     {
-        $endDestination = $options['end'] ?? true;
+        $endDestination = (bool) ($options['end'] ?? true);
         $totalBytes = 0;
         $cancelled = false;
         $pendingWriteCount = 0;
         $hasError = false;
 
+        /** @var CancellablePromise<int> $promise */
         $promise = new CancellablePromise();
 
         $handlers = $this->createHandlers(
@@ -71,6 +70,10 @@ class PipeHandler
         return $promise;
     }
 
+    /**
+     * @param CancellablePromiseInterface<int> $promise
+     * @return array{data: callable, end: callable, error: callable, close: callable}
+     */
     private function createHandlers(
         WritableStreamInterface $destination,
         bool $endDestination,
@@ -80,7 +83,14 @@ class PipeHandler
         int &$pendingWriteCount,
         bool &$hasError
     ): array {
-        $dataHandler = function ($data) use ($destination, &$totalBytes, &$cancelled, &$pendingWriteCount, &$hasError) {
+        $handlers = [
+            'data' => null,
+            'end' => null,
+            'error' => null,
+            'close' => null,
+        ];
+
+        $handlers['data'] = function (string $data) use ($destination, &$totalBytes, &$cancelled, &$pendingWriteCount, &$hasError) {
             if ($cancelled || $hasError) {
                 return;
             }
@@ -91,26 +101,23 @@ class PipeHandler
             $writePromise->then(function ($bytes) use (&$totalBytes, &$pendingWriteCount) {
                 $totalBytes += $bytes;
                 $pendingWriteCount--;
-            })->catch(function ($error) use (&$cancelled, &$pendingWriteCount, &$hasError) {
+            })->catch(function ($error) use (&$pendingWriteCount, &$hasError) {
                 $pendingWriteCount--;
-                if (! $cancelled && ! $hasError) {
-                    $hasError = true;
-                    ($this->emitCallback)('error', $error);
+                if ($hasError) {
+                    return;
                 }
+                $hasError = true;
+                ($this->emitCallback)('error', $error);
             });
         };
 
-        $endHandler = function () use ($promise, $destination, $endDestination, &$totalBytes, &$cancelled, &$pendingWriteCount, &$hasError, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler) {
+        $handlers['end'] = function () use ($promise, $destination, $endDestination, &$totalBytes, &$cancelled, &$pendingWriteCount, &$hasError, &$handlers) {
             if ($cancelled || $hasError) {
                 return;
             }
 
-            $this->detachHandlers($destination, [
-                'data' => $dataHandler,
-                'end' => $endHandler,
-                'error' => $errorHandler,
-                'close' => $closeHandler,
-            ]);
+            /** @phpstan-ignore argument.type */
+            $this->detachHandlers($destination, $handlers);
 
             $this->waitForPendingWrites($pendingWriteCount, $hasError, function () use ($promise, $destination, $endDestination, &$totalBytes) {
                 if ($endDestination) {
@@ -125,32 +132,24 @@ class PipeHandler
             });
         };
 
-        $errorHandler = function ($error) use ($promise, $destination, &$cancelled, &$hasError, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler) {
+        $handlers['error'] = function ($error) use ($promise, $destination, &$cancelled, &$hasError, &$handlers) {
             if ($cancelled || $hasError) {
                 return;
             }
 
             $hasError = true;
-            $this->detachHandlers($destination, [
-                'data' => $dataHandler,
-                'end' => $endHandler,
-                'error' => $errorHandler,
-                'close' => $closeHandler,
-            ]);
+            /** @phpstan-ignore argument.type */
+            $this->detachHandlers($destination, $handlers);
             $promise->reject($error);
         };
 
-        $closeHandler = function () use ($promise, $destination, &$cancelled, &$hasError, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler) {
+        $handlers['close'] = function () use ($promise, $destination, &$cancelled, &$hasError, &$handlers) {
             if ($cancelled || $hasError) {
                 return;
             }
 
-            $this->detachHandlers($destination, [
-                'data' => $dataHandler,
-                'end' => $endHandler,
-                'error' => $errorHandler,
-                'close' => $closeHandler,
-            ]);
+            /** @phpstan-ignore argument.type */
+            $this->detachHandlers($destination, $handlers);
 
             if (($this->isReadableCallback)() && ! ($this->isEofCallback)()) {
                 $hasError = true;
@@ -158,14 +157,12 @@ class PipeHandler
             }
         };
 
-        return [
-            'data' => $dataHandler,
-            'end' => $endHandler,
-            'error' => $errorHandler,
-            'close' => $closeHandler,
-        ];
+        return $handlers;
     }
 
+    /**
+     * @param array{data: callable, end: callable, error: callable, close: callable} $handlers
+     */
     private function attachHandlers(WritableStreamInterface $destination, array $handlers): void
     {
         ($this->onCallback)('data', $handlers['data']);
@@ -174,6 +171,9 @@ class PipeHandler
         $destination->on('close', $handlers['close']);
     }
 
+    /**
+     * @param array{data: callable, end: callable, error: callable, close: callable} $handlers
+     */
     private function detachHandlers(WritableStreamInterface $destination, array $handlers): void
     {
         ($this->offCallback)('data', $handlers['data']);

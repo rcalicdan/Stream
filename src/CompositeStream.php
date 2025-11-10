@@ -40,8 +40,8 @@ class CompositeStream implements DuplexStreamInterface
         $this->forwardEvents($this->readable, ['data', 'end', 'pause', 'resume']);
         $this->forwardEvents($this->writable, ['drain', 'finish']);
 
-        $this->readable->on('error', fn ($error) => $this->emit('error', $error));
-        $this->writable->on('error', fn ($error) => $this->emit('error', $error));
+        $this->readable->on('error', fn($error) => $this->emit('error', $error));
+        $this->writable->on('error', fn($error) => $this->emit('error', $error));
 
         $this->readable->on('close', function () {
             if (! $this->closed && ! $this->writable->isWritable()) {
@@ -56,6 +56,10 @@ class CompositeStream implements DuplexStreamInterface
         });
     }
 
+    /**
+     * @param ReadableStreamInterface|WritableStreamInterface $source
+     * @param array<string> $events
+     */
     private function forwardEvents(object $source, array $events): void
     {
         foreach ($events as $event) {
@@ -151,7 +155,7 @@ class CompositeStream implements DuplexStreamInterface
     public function end(?string $data = null): CancellablePromiseInterface
     {
         if ($this->closed) {
-            return $this->createResolvedPromise(null);
+            return $this->createResolvedVoidPromise();
         }
 
         $this->readable->pause();

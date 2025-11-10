@@ -54,7 +54,7 @@ trait EventEmitterTrait
             }
         }
 
-        if (empty($this->listeners[$event])) {
+        if ($this->listeners[$event] === []) {
             unset($this->listeners[$event]);
         }
 
@@ -89,7 +89,7 @@ trait EventEmitterTrait
      */
     protected function hasListeners(string $event): bool
     {
-        return isset($this->listeners[$event]) && ! empty($this->listeners[$event]);
+        return isset($this->listeners[$event]) && $this->listeners[$event] !== [];
     }
 
     /**

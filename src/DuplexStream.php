@@ -56,6 +56,10 @@ class DuplexStream implements DuplexStreamInterface
         });
     }
 
+    /**
+     * @param ReadableStream|WritableStream $source
+     * @param array<string> $events
+     */
     private function forwardEvents(object $source, array $events): void
     {
         foreach ($events as $event) {

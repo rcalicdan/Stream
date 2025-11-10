@@ -16,10 +16,15 @@ class WritableStreamHandler
     private string $writeBuffer = '';
     private ?string $watcherId = null;
 
-    /** @var array<array{resolve: callable, reject: callable, bytes: int, promise: CancellablePromiseInterface}> */
+    /**
+     * @var array<array{resolve: callable(int): void, reject: callable(\Throwable): void, bytes: int, promise: CancellablePromiseInterface<int>}>
+     */
     private array $writeQueue = [];
 
+    /** @var callable(string, mixed=): void */
     private $emitCallback;
+
+    /** @var callable(): void */
     private $closeCallback;
 
     /**
@@ -40,22 +45,28 @@ class WritableStreamHandler
 
     public function hasQueuedWrites(): bool
     {
-        return ! empty($this->writeQueue);
+        return $this->writeQueue !== [];
     }
 
+    /**
+     * @param CancellablePromiseInterface<int> $promise
+     */
     public function queueWrite(string $data, CancellablePromiseInterface $promise): void
     {
         $this->writeBuffer .= $data;
         $bytesToWrite = strlen($data);
 
         $this->writeQueue[] = [
-            'resolve' => fn ($value) => $promise->resolve($value),
-            'reject' => fn ($reason) => $promise->reject($reason),
+            'resolve' => fn (int $value) => $promise->resolve($value),
+            'reject' => fn (\Throwable $reason) => $promise->reject($reason),
             'bytes' => $bytesToWrite,
             'promise' => $promise,
         ];
     }
 
+    /**
+     * @param CancellablePromiseInterface<int> $promise
+     */
     public function cancelWrite(CancellablePromiseInterface $promise): void
     {
         $bytesToRemove = 0;
@@ -81,7 +92,7 @@ class WritableStreamHandler
 
     public function rejectAllPending(\Throwable $error): void
     {
-        while (! empty($this->writeQueue)) {
+        while ($this->writeQueue !== []) {
             $item = array_shift($this->writeQueue);
             if (! $item['promise']->isCancelled()) {
                 $item['reject']($error);
@@ -127,7 +138,7 @@ class WritableStreamHandler
             $error = new StreamException('Failed to write to stream');
             ($this->emitCallback)('error', $error);
 
-            while (! empty($this->writeQueue)) {
+            while ($this->writeQueue !== []) {
                 $item = array_shift($this->writeQueue);
                 if (! $item['promise']->isCancelled()) {
                     $item['reject']($error);
@@ -149,7 +160,7 @@ class WritableStreamHandler
             ($this->emitCallback)('drain');
         }
 
-        if ($this->writeBuffer === '' && empty($this->writeQueue)) {
+        if ($this->writeBuffer === '' && $this->writeQueue === []) {
             ($this->emitCallback)('drain');
         }
 
@@ -162,7 +173,7 @@ class WritableStreamHandler
     {
         $remaining = $written;
 
-        while ($remaining > 0 && ! empty($this->writeQueue)) {
+        while ($remaining > 0 && $this->writeQueue !== []) {
             $item = &$this->writeQueue[0];
 
             if ($item['promise']->isCancelled()) {
@@ -184,6 +195,6 @@ class WritableStreamHandler
 
     public function isFullyDrained(): bool
     {
-        return $this->writeBuffer === '' && empty($this->writeQueue);
+        return $this->writeBuffer === '' && $this->writeQueue === [];
     }
 }

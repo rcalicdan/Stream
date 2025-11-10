@@ -27,11 +27,11 @@ class ThroughStream implements DuplexStreamInterface
     private bool $ending = false;
     private bool $draining = false;
 
-    /** @var callable|null */
+    /** @var callable(string): string|null */
     private $transformer;
 
     /**
-     * @param callable|null $transformer Function to transform data: fn(string $data): string
+     * @param callable(string): string|null $transformer Function to transform data: fn(string $data): string
      */
     public function __construct(?callable $transformer = null)
     {
@@ -75,31 +75,44 @@ class ThroughStream implements DuplexStreamInterface
         $totalBytes = 0;
         $cancelled = false;
 
+        /** @var CancellablePromise<int> $promise */
         $promise = new CancellablePromise();
 
-        $dataHandler = function ($data) use ($destination, &$totalBytes, &$cancelled) {
+        $dataHandler = function (string $data) use ($destination, &$totalBytes, &$cancelled): void {
+            /** @phpstan-ignore if.alwaysFalse */
             if ($cancelled) {
                 return;
             }
 
-            $destination->write($data)->then(function ($bytes) use (&$totalBytes) {
+            $destination->write($data)->then(function (int $bytes) use (&$totalBytes): void {
                 $totalBytes += $bytes;
             });
         };
 
-        $endHandler = function () use ($promise, $destination, $endDestination, &$totalBytes, &$cancelled, &$dataHandler, &$endHandler, &$errorHandler) {
+        $endHandler = function () use (
+            $promise,
+            $destination,
+            $endDestination,
+            &$totalBytes,
+            &$cancelled,
+            &$dataHandler,
+            &$endHandler,
+            &$errorHandler,
+        ): void {
+            /** @phpstan-ignore if.alwaysFalse */
             if ($cancelled) {
                 return;
             }
 
             $this->off('data', $dataHandler);
             $this->off('end', $endHandler);
+            /** @phpstan-ignore argument.type */ 
             $this->off('error', $errorHandler);
 
             if ($endDestination) {
-                $destination->end()->then(function () use ($promise, &$totalBytes) {
+                $destination->end()->then(function () use ($promise, &$totalBytes): void {
                     $promise->resolve($totalBytes);
-                })->catch(function () use ($promise, &$totalBytes) {
+                })->catch(function () use ($promise, &$totalBytes): void {
                     $promise->resolve($totalBytes);
                 });
             } else {
@@ -107,7 +120,8 @@ class ThroughStream implements DuplexStreamInterface
             }
         };
 
-        $errorHandler = function ($error) use ($promise, &$cancelled, &$dataHandler, &$endHandler, &$errorHandler) {
+        $errorHandler = function (\Throwable $error) use ($promise, &$cancelled, &$dataHandler, &$endHandler, &$errorHandler): void {
+            /** @phpstan-ignore if.alwaysFalse */
             if ($cancelled) {
                 return;
             }
@@ -123,7 +137,7 @@ class ThroughStream implements DuplexStreamInterface
         $this->on('end', $endHandler);
         $this->on('error', $errorHandler);
 
-        $promise->setCancelHandler(function () use (&$cancelled, &$dataHandler, &$endHandler, &$errorHandler) {
+        $promise->setCancelHandler(function () use (&$cancelled, &$dataHandler, &$endHandler, &$errorHandler): void {
             $cancelled = true;
             $this->pause();
             $this->off('data', $dataHandler);
@@ -140,20 +154,22 @@ class ThroughStream implements DuplexStreamInterface
             return $this->createRejectedPromise(new StreamException('Stream is not writable'));
         }
 
+        /** @var CancellablePromise<int> $promise */
         $promise = new CancellablePromise();
 
         try {
+            $transformedData = $data;
             if ($this->transformer !== null) {
-                $data = ($this->transformer)($data);
+                $transformedData = ($this->transformer)($data);
             }
 
-            $this->emit('data', $data);
+            $this->emit('data', $transformedData);
 
             if ($this->paused) {
                 $this->draining = true;
                 $promise->resolve(0);
             } else {
-                $promise->resolve(strlen($data));
+                $promise->resolve(strlen($transformedData));
             }
         } catch (\Throwable $e) {
             $this->emit('error', $e);
@@ -172,10 +188,12 @@ class ThroughStream implements DuplexStreamInterface
     public function end(?string $data = null): CancellablePromiseInterface
     {
         if (! $this->isWritable() || $this->ending) {
-            return $this->createResolvedPromise(null);
+            return $this->createResolvedVoidPromise();
         }
 
         $this->ending = true;
+        
+        /** @var CancellablePromise<void> $promise */
         $promise = new CancellablePromise();
 
         try {

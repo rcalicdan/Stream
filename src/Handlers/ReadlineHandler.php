@@ -9,14 +9,14 @@ use Hibla\Promise\Interfaces\CancellablePromiseInterface;
 
 class ReadLineHandler
 {
-    private $readCallback;
-    private $prependBufferCallback;
-
-    public function __construct(callable $readCallback, callable $prependBufferCallback)
-    {
-        $this->readCallback = $readCallback;
-        $this->prependBufferCallback = $prependBufferCallback;
-    }
+    /**
+     * @param callable(int): CancellablePromiseInterface<string|null> $readCallback
+     * @param callable(string): void $prependBufferCallback
+     */
+    public function __construct(
+        private $readCallback,
+        private $prependBufferCallback
+    ) {}
 
     public function findLineInBuffer(string &$buffer, int $maxLength): ?string
     {
@@ -39,18 +39,29 @@ class ReadLineHandler
         return null;
     }
 
+    /**
+     * @return CancellablePromiseInterface<string|null>
+     */
     public function readLineFromStream(string $initialBuffer, int $maxLength): CancellablePromiseInterface
     {
+        /** @var CancellablePromise<string|null> $promise */
         $promise = new CancellablePromise();
         $lineBuffer = $initialBuffer;
         $cancelled = false;
+
+        $promise->setCancelHandler(function () use (&$cancelled) {
+            $cancelled = true;
+        });
 
         $readMore = function () use ($promise, $maxLength, &$lineBuffer, &$readMore, &$cancelled) {
             if ($cancelled) {
                 return;
             }
 
-            ($this->readCallback)(1024)->then(function ($data) use ($promise, $maxLength, &$lineBuffer, &$readMore, &$cancelled) {
+            $readPromise = ($this->readCallback)(1024);
+
+            $readPromise->then(function ($data) use ($promise, $maxLength, &$lineBuffer, &$readMore, &$cancelled) {
+                /** @phpstan-ignore if.alwaysFalse */
                 if ($cancelled) {
                     return;
                 }
@@ -90,15 +101,13 @@ class ReadLineHandler
 
                 $readMore();
             })->catch(function ($error) use ($promise, &$cancelled) {
-                if (! $cancelled) {
-                    $promise->reject($error);
+                /** @phpstan-ignore if.alwaysFalse */
+                if ($cancelled) {
+                    return;
                 }
+                $promise->reject($error);
             });
         };
-
-        $promise->setCancelHandler(function () use (&$cancelled) {
-            $cancelled = true;
-        });
 
         $readMore();
 

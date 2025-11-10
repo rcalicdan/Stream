@@ -30,10 +30,13 @@
             "pestphp/pest-plugin": true
         }
     },
-      "scripts": {
+    "scripts": {
         "test": "./vendor/bin/pest",
         "format": "./vendor/bin/pint",
         "format-test": "./vendor/bin/pint --test",
-        "analyze": "./vendor/bin/phpstan analyse"
+        "analyze": "./vendor/bin/phpstan analyse",
+        "test-unit": "./vendor/bin/pest tests/Unit",
+        "test-integration": "./vendor/bin/pest tests/Integration",
+        "test-feature": "./vendor/bin/pest tests/Feature"
     }
 }

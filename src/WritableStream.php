@@ -59,6 +59,10 @@ class WritableStream implements WritableStreamInterface
         $this->initializeHandler();
     }
 
+    /**
+     * @param resource $resource
+     * @param array<string, mixed> $meta
+     */
     private function setupNonBlocking($resource, array $meta): void
     {
         $streamType = $meta['stream_type'] ?? '';
@@ -66,9 +70,9 @@ class WritableStream implements WritableStreamInterface
 
         $shouldSetNonBlocking = false;
 
-        if (in_array($streamType, ['tcp_socket', 'udp_socket', 'unix_socket', 'ssl_socket', 'TCP/IP', 'tcp_socket/ssl'])) {
+        if (in_array($streamType, ['tcp_socket', 'udp_socket', 'unix_socket', 'ssl_socket', 'TCP/IP', 'tcp_socket/ssl'], true)) {
             $shouldSetNonBlocking = true;
-        } elseif (! $isWindows && in_array($streamType, ['STDIO', 'PLAINFILE', 'TEMP', 'MEMORY'])) {
+        } elseif (! $isWindows && in_array($streamType, ['STDIO', 'PLAINFILE', 'TEMP', 'MEMORY'], true)) {
             $shouldSetNonBlocking = true;
         }
 
@@ -79,10 +83,14 @@ class WritableStream implements WritableStreamInterface
 
     private function initializeHandler(): void
     {
+        if ($this->resource === null) {
+            throw new StreamException('Resource is null during handler initialization');
+        }
+
         $this->handler = new WritableStreamHandler(
             $this->resource,
             $this->softLimit,
-            fn (string $event, ...$args) => $this->emit($event, ...$args),
+            fn (string $event, mixed ...$args) => $this->emit($event, ...$args),
             fn () => $this->close()
         );
     }
@@ -101,11 +109,12 @@ class WritableStream implements WritableStreamInterface
             return $this->createResolvedPromise(0);
         }
 
+        /** @var CancellablePromise<int> $promise */
         $promise = new CancellablePromise();
 
         $this->handler->queueWrite($data, $promise);
 
-        $promise->setCancelHandler(function () use ($promise) {
+        $promise->setCancelHandler(function () use ($promise): void {
             $this->handler->cancelWrite($promise);
         });
 
@@ -122,20 +131,22 @@ class WritableStream implements WritableStreamInterface
     public function end(?string $data = null): CancellablePromiseInterface
     {
         if ($this->ending || $this->closed) {
-            return $this->createResolvedPromise(null);
+            return $this->createResolvedVoidPromise();
         }
 
         $this->ending = true;
+        
+        /** @var CancellablePromise<void> $promise */
         $promise = new CancellablePromise();
 
-        $finish = function () use ($promise) {
+        $finish = function () use ($promise): void {
             $this->writable = false;
 
-            $this->waitForDrain()->then(function () use ($promise) {
+            $this->waitForDrain()->then(function () use ($promise): void {
                 $this->emit('finish');
                 $this->close();
                 $promise->resolve(null);
-            })->catch(function ($error) use ($promise) {
+            })->catch(function (mixed $error) use ($promise): void {
                 $this->emit('error', $error);
                 $this->close();
                 $promise->reject($error);
@@ -143,9 +154,9 @@ class WritableStream implements WritableStreamInterface
         };
 
         if ($data !== null && $data !== '') {
-            $this->write($data)->then(function () use ($finish) {
+            $this->write($data)->then(function () use ($finish): void {
                 $finish();
-            })->catch(function ($error) use ($promise) {
+            })->catch(function (mixed $error) use ($promise): void {
                 $this->writable = false;
                 $this->emit('error', $error);
                 $this->close();
@@ -189,54 +200,64 @@ class WritableStream implements WritableStreamInterface
         $this->removeAllListeners();
     }
 
+    /**
+     * @return CancellablePromiseInterface<void>
+     */
     private function waitForDrain(): CancellablePromiseInterface
     {
         if ($this->handler->isFullyDrained()) {
-            return $this->createResolvedPromise(null);
+            return $this->createResolvedVoidPromise();
         }
 
+        /** @var CancellablePromise<void> $promise */
         $promise = new CancellablePromise();
         $cancelled = false;
 
-        $drainHandler = null;
-        $errorHandler = null;
-        $checkDrained = null;
+        $handlers = [
+            'drain' => null,
+            'error' => null,
+        ];
 
-        $checkDrained = function () use ($promise, &$drainHandler, &$errorHandler, &$cancelled, &$checkDrained) {
+        $checkDrained = function () use ($promise, &$handlers, &$cancelled): void {
+            /** @phpstan-ignore if.alwaysFalse */
             if ($cancelled) {
                 return;
             }
 
             if ($this->handler->isFullyDrained()) {
-                $this->off('drain', $drainHandler);
-                $this->off('error', $errorHandler);
+                /** @phpstan-ignore argument.type */
+                $this->off('drain', $handlers['drain']);
+                /** @phpstan-ignore argument.type */
+                $this->off('error', $handlers['error']);
                 $promise->resolve(null);
             }
         };
 
-        $drainHandler = function () use ($checkDrained) {
+        $handlers['drain'] = function () use ($checkDrained): void {
             $checkDrained();
         };
 
-        $errorHandler = function ($error) use ($promise, &$drainHandler, &$errorHandler, &$cancelled) {
+        $handlers['error'] = function (mixed $error) use ($promise, &$handlers, &$cancelled): void {
+            /** @phpstan-ignore if.alwaysFalse */
             if ($cancelled) {
                 return;
             }
 
-            $this->off('drain', $drainHandler);
-            $this->off('error', $errorHandler);
+            $this->off('drain', $handlers['drain']);
+            /** @phpstan-ignore argument.type */
+            $this->off('error', $handlers['error']);
             $promise->reject($error);
         };
 
-        $this->on('drain', $drainHandler);
-        $this->on('error', $errorHandler);
+        $this->on('drain', $handlers['drain']);
+        $this->on('error', $handlers['error']);
 
         $checkDrained();
 
-        $promise->setCancelHandler(function () use (&$cancelled, &$drainHandler, &$errorHandler) {
+        $promise->setCancelHandler(function () use (&$cancelled, &$handlers): void {
             $cancelled = true;
-            $this->off('drain', $drainHandler);
-            $this->off('error', $errorHandler);
+            $this->off('drain', $handlers['drain']);
+            $this->off('error', $handlers['error']);
         });
 
         return $promise;
