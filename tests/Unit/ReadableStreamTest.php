@@ -5,6 +5,10 @@ use Hibla\Stream\ReadableStream;
 use Hibla\Stream\Exceptions\StreamException;
 
 describe('ReadableStream', function () {
+    beforeEach(function () {
+       Loop::reset();
+    });
+    
     test('can be created from a readable resource', function () {
         $file = createTempFile('test data');
         $resource = fopen($file, 'r');
@@ -121,7 +125,7 @@ describe('ReadableStream', function () {
         $stream->resume();
 
         // Wait for stream to complete
-        usleep(100000); // 100ms
+        usleep(100000); 
         Loop::run();
 
         expect($emittedData)->toBe($content);
