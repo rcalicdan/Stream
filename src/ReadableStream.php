@@ -37,7 +37,7 @@ class ReadableStream implements ReadableStreamInterface
      * @param resource $resource Stream resource
      * @param int $chunkSize Default chunk size for reads
      */
-    public function __construct($resource, int $chunkSize = 8192)
+    public function __construct($resource, int $chunkSize = 65536)
     {
         if (!is_resource($resource)) {
             throw new StreamException('Invalid resource provided');
