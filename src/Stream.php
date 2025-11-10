@@ -14,7 +14,7 @@ class Stream
     /**
      * Create a readable stream from a file path
      */
-    public static function readableFile(string $path, int $chunkSize = 8192): ReadableStreamInterface
+    public static function readableFile(string $path, int $chunkSize = 65536): ReadableStreamInterface
     {
         $resource = @fopen($path, 'rb');
 
@@ -43,7 +43,7 @@ class Stream
     /**
      * Create a duplex stream from a file path
      */
-    public static function duplexFile(string $path, int $readChunkSize = 8192, int $writeSoftLimit = 65536): DuplexStreamInterface
+    public static function duplexFile(string $path, int $readChunkSize = 65536, int $writeSoftLimit = 65536): DuplexStreamInterface
     {
         $resource = @fopen($path, 'r+b');
 
