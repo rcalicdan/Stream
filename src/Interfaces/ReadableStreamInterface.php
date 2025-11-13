@@ -72,6 +72,11 @@ interface ReadableStreamInterface
     public function isPaused(): bool;
 
     /**
+     * Seek to a specific position in the stream.
+     */
+    public function seek(int $offset, int $whence = SEEK_SET): bool;
+
+    /**
      * Forcefully terminates the stream and closes the underlying resource.
      */
     public function close(): void;

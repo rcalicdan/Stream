@@ -40,8 +40,8 @@ class DuplexStream implements DuplexStreamInterface
         $this->forwardEvents($this->readable, ['data', 'end', 'pause', 'resume']);
         $this->forwardEvents($this->writable, ['drain', 'finish']);
 
-        $this->readable->on('error', fn ($error) => $this->emit('error', $error));
-        $this->writable->on('error', fn ($error) => $this->emit('error', $error));
+        $this->readable->on('error', fn($error) => $this->emit('error', $error));
+        $this->writable->on('error', fn($error) => $this->emit('error', $error));
 
         $this->readable->on('close', function () {
             if (! $this->closed) {
@@ -86,6 +86,14 @@ class DuplexStream implements DuplexStreamInterface
     public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
     {
         return $this->readable->pipe($destination, $options);
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function seek(int $offset, int $whence = SEEK_SET): bool
+    {
+        return $this->readable->seek($offset, $whence);
     }
 
     /**

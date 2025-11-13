@@ -206,6 +206,54 @@ class ReadableStream implements ReadableStreamInterface
     /**
      * @inheritdoc
      */
+    public function seek(int $offset, int $whence = SEEK_SET): bool
+    {
+        if ($this->closed) {
+            throw new StreamException('Cannot seek on a closed stream');
+        }
+
+        if ($this->resource === null || !is_resource($this->resource)) {
+            throw new StreamException('Invalid stream resource');
+        }
+
+        $meta = stream_get_meta_data($this->resource);
+        if (isset($meta['seekable']) && !$meta['seekable']) {
+            return false;
+        }
+
+        $result = @fseek($this->resource, $offset, $whence);
+
+        if ($result === 0) {
+            $this->handler->clearBuffer();
+            $this->eof = false;
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Get the current position in the stream.
+     *
+     * @return int|false The current position, or false on failure
+     * @throws StreamException If the stream is closed or the resource is invalid
+     */
+    public function tell(): int|false
+    {
+        if ($this->closed) {
+            throw new StreamException('Cannot tell position on a closed stream');
+        }
+
+        if ($this->resource === null || !is_resource($this->resource)) {
+            throw new StreamException('Invalid stream resource');
+        }
+
+        return @ftell($this->resource);
+    }
+
+    /**
+     * @inheritdoc
+     */
     public function close(): void
     {
         if ($this->closed) {
@@ -268,23 +316,23 @@ class ReadableStream implements ReadableStreamInterface
                     $this->eof = true;
                 }
             },
-            fn () => $this->close(),
+            fn() => $this->close(),
             function () use ($resource) {
                 return is_resource($resource) && feof($resource);
             },
-            fn () => $this->pause(),
-            fn () => $this->paused,
-            fn (string $event) => $this->hasListeners($event)
+            fn() => $this->pause(),
+            fn() => $this->paused,
+            fn(string $event) => $this->hasListeners($event)
         );
 
         $this->lineHandler = new ReadLineHandler(
-            fn (?int $length) => $this->read($length),
-            fn (string $data) => $this->handler->prependBuffer($data)
+            fn(?int $length) => $this->read($length),
+            fn(string $data) => $this->handler->prependBuffer($data)
         );
 
         $this->allHandler = new ReadAllHandler(
             $this->chunkSize,
-            fn (?int $length) => $this->read($length)
+            fn(?int $length) => $this->read($length)
         );
 
         $this->pipeHandler = new PipeHandler(
@@ -297,10 +345,10 @@ class ReadableStream implements ReadableStreamInterface
             function (string $event, ...$args): void {
                 $this->emit($event, ...$args);
             },
-            fn () => $this->pause(),
-            fn () => $this->resume(),
-            fn () => $this->isReadable(),
-            fn () => $this->isEof()
+            fn() => $this->pause(),
+            fn() => $this->resume(),
+            fn() => $this->isReadable(),
+            fn() => $this->isEof()
         );
     }
 
