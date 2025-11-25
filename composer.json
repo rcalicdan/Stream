@@ -6,7 +6,8 @@
     "prefer-stable": true,
     "require": {
         "hiblaphp/event-loop": "dev-main",
-        "hiblaphp/promise": "dev-main"
+        "hiblaphp/promise": "dev-main",
+        "evenement/evenement": "^3.0"
     },
     "autoload": {
         "psr-4": {

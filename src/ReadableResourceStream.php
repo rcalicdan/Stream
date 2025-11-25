@@ -4,21 +4,14 @@ declare(strict_types=1);
 
 namespace Hibla\Stream;
 
-use Hibla\Promise\CancellablePromise;
-use Hibla\Promise\Interfaces\CancellablePromiseInterface;
+use Evenement\EventEmitterTrait;
 use Hibla\Stream\Exceptions\StreamException;
-use Hibla\Stream\Handlers\PipeHandler;
 use Hibla\Stream\Handlers\ReadableStreamHandler;
-use Hibla\Stream\Handlers\ReadAllHandler;
-use Hibla\Stream\Handlers\ReadLineHandler;
 use Hibla\Stream\Interfaces\ReadableStreamInterface;
 use Hibla\Stream\Interfaces\WritableStreamInterface;
-use Hibla\Stream\Traits\EventEmitterTrait;
-use Hibla\Stream\Traits\PromiseHelperTrait;
 
-class ReadableStream implements ReadableStreamInterface
+class ReadableResourceStream implements ReadableStreamInterface
 {
-    use PromiseHelperTrait;
     use EventEmitterTrait;
 
     /** @var resource|null The underlying stream resource. */
@@ -31,9 +24,6 @@ class ReadableStream implements ReadableStreamInterface
     private int $chunkSize;
 
     private ReadableStreamHandler $handler;
-    private ReadLineHandler $lineHandler;
-    private ReadAllHandler $allHandler;
-    private PipeHandler $pipeHandler;
 
     /**
      * Initializes the readable stream, validates the resource, and sets it to non-blocking mode.
@@ -57,98 +47,79 @@ class ReadableStream implements ReadableStreamInterface
         $this->chunkSize = $chunkSize;
 
         $this->setupNonBlocking($resource, $meta);
-        $this->initializeHandlers();
+        $this->initializeHandler();
+    }
+
+    /**
+     * Get the internal handler for advanced operations.
+     */
+    public function getHandler(): ReadableStreamHandler
+    {
+        return $this->handler;
+    }
+
+    /**
+     * Get the chunk size.
+     */
+    public function getChunkSize(): int
+    {
+        return $this->chunkSize;
     }
 
     /**
      * @inheritdoc
      */
-    public function read(?int $length = null): CancellablePromiseInterface
+    public function pipe(WritableStreamInterface $destination, array $options = []): WritableStreamInterface
     {
+        // source not readable => NO-OP
         if (! $this->isReadable()) {
-            return $this->createRejectedPromise(new StreamException('Stream is not readable'));
+            return $destination;
         }
 
-        if ($this->eof) {
-            //@phpstan-ignore-next-line
-            return $this->createResolvedPromise(null);
+        // destination not writable => just pause() source
+        if (! $destination->isWritable()) {
+            $this->pause();
+
+            return $destination;
         }
 
-        /** @var CancellablePromise<string|null> $promise */
-        $promise = new CancellablePromise();
+        $destination->emit('pipe', [$this]);
 
-        $this->handler->queueRead($length, $promise);
-
-        $promise->setCancelHandler(function () use ($promise): void {
-            $this->handler->cancelRead($promise);
+        // forward all source data events as $destination->write()
+        $this->on('data', $dataer = function (string $data) use ($destination): void {
+            $feedMore = $destination->write($data);
+            if (false === $feedMore) {
+                $this->pause();
+            }
         });
 
-        if ($this->paused) {
+        $destination->on('close', function () use ($dataer): void {
+            $this->removeListener('data', $dataer);
+            $this->pause();
+        });
+
+        // forward destination drain as $this->resume()
+        $destination->on('drain', $drainer = function (): void {
             $this->resume();
+        });
+
+        $this->on('close', function () use ($destination, $drainer): void {
+            $destination->removeListener('drain', $drainer);
+        });
+
+        // forward end event from source as $destination->end()
+        $end = $options['end'] ?? true;
+        if ($end) {
+            $this->on('end', $ender = function () use ($destination): void {
+                $destination->end();
+            });
+
+            $destination->on('close', function () use ($ender): void {
+                $this->removeListener('end', $ender);
+            });
         }
 
-        return $promise;
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function readLine(?int $maxLength = null): CancellablePromiseInterface
-    {
-        if (! $this->isReadable()) {
-            return $this->createRejectedPromise(new StreamException('Stream is not readable'));
-        }
-
-        if ($this->eof && $this->handler->getBuffer() === '') {
-            //@phpstan-ignore-next-line
-            return $this->createResolvedPromise(null);
-        }
-
-        $maxLen = $maxLength ?? $this->chunkSize;
-        $buffer = $this->handler->getBuffer();
-
-        $line = $this->lineHandler->findLineInBuffer($buffer, $maxLen);
-        if ($line !== null) {
-            $this->handler->setBuffer($buffer);
-
-            //@phpstan-ignore-next-line
-            return $this->createResolvedPromise($line);
-        }
-
-        $this->handler->clearBuffer();
-
-        return $this->lineHandler->readLineFromStream($buffer, $maxLen);
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function readAll(int $maxLength = 1048576): CancellablePromiseInterface
-    {
-        if (! $this->isReadable()) {
-            return $this->createRejectedPromise(new StreamException('Stream is not readable'));
-        }
-
-        $buffer = $this->handler->getBuffer();
-        $this->handler->clearBuffer();
-
-        return $this->allHandler->readAll($buffer, $maxLength);
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
-    {
-        if (! $this->isReadable()) {
-            return $this->createRejectedPromise(new StreamException('Stream is not readable'));
-        }
-
-        if (! $destination->isWritable()) {
-            return $this->createRejectedPromise(new StreamException('Destination is not writable'));
-        }
-
-        return $this->pipeHandler->pipe($destination, $options);
+        return $destination;
     }
 
     /**
@@ -277,6 +248,14 @@ class ReadableStream implements ReadableStreamInterface
     }
 
     /**
+     * Check if there are listeners for an event.
+     */
+    private function hasListeners(string $event): bool
+    {
+        return isset($this->listeners[$event]) && count($this->listeners[$event]) > 0;
+    }
+
+    /**
      * @param resource $resource
      * @param array<string, mixed> $meta
      */
@@ -299,7 +278,7 @@ class ReadableStream implements ReadableStreamInterface
         }
     }
 
-    private function initializeHandlers(): void
+    private function initializeHandler(): void
     {
         if ($this->resource === null) {
             throw new StreamException('Resource is null during handler initialization');
@@ -311,7 +290,7 @@ class ReadableStream implements ReadableStreamInterface
             $resource,
             $this->chunkSize,
             function (string $event, ...$args): void {
-                $this->emit($event, ...$args);
+                $this->emit($event, $args);
 
                 if ($event === 'end') {
                     $this->eof = true;
@@ -324,32 +303,6 @@ class ReadableStream implements ReadableStreamInterface
             fn () => $this->pause(),
             fn () => $this->paused,
             fn (string $event) => $this->hasListeners($event)
-        );
-
-        $this->lineHandler = new ReadLineHandler(
-            fn (?int $length) => $this->read($length),
-            fn (string $data) => $this->handler->prependBuffer($data)
-        );
-
-        $this->allHandler = new ReadAllHandler(
-            $this->chunkSize,
-            fn (?int $length) => $this->read($length)
-        );
-
-        $this->pipeHandler = new PipeHandler(
-            function (string $event, callable $callback): void {
-                $this->on($event, $callback);
-            },
-            function (string $event, callable $callback): void {
-                $this->off($event, $callback);
-            },
-            function (string $event, ...$args): void {
-                $this->emit($event, ...$args);
-            },
-            fn () => $this->pause(),
-            fn () => $this->resume(),
-            fn () => $this->isReadable(),
-            fn () => $this->isEof()
         );
     }
 
