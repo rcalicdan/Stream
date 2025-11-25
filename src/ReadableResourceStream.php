@@ -204,6 +204,7 @@ class ReadableResourceStream extends EventEmitter implements ReadableStreamInter
     private function hasListeners(string $event): bool
     {
         $listeners = $this->listeners($event);
+
         return \count($listeners) > 0;
     }
 

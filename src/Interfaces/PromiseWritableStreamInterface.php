@@ -10,7 +10,7 @@ use Hibla\Promise\Interfaces\CancellablePromiseInterface;
  * Defines the contract for promise-based writable stream operations.
  * Provides async methods for writing data using promises.
  */
-interface WritablePromiseStreamInterface
+interface PromiseWritableStreamInterface
 {
     /**
      * Asynchronously writes data to the stream's buffer. The promise resolves when the data is buffered.

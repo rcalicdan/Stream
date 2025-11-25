@@ -10,7 +10,7 @@ use Hibla\Promise\Interfaces\CancellablePromiseInterface;
  * Defines the contract for promise-based stream operations.
  * Provides async methods for reading data using promises.
  */
-interface ReadablePromiseStreamInterface
+interface PromiseReadableStreamInterface
 {
     /**
      * Asynchronously reads a chunk of data. The promise resolves with the data when available.

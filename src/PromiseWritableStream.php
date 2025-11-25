@@ -7,10 +7,10 @@ namespace Hibla\Stream;
 use Hibla\Promise\CancellablePromise;
 use Hibla\Promise\Interfaces\CancellablePromiseInterface;
 use Hibla\Stream\Exceptions\StreamException;
-use Hibla\Stream\Interfaces\WritablePromiseStreamInterface;
+use Hibla\Stream\Interfaces\PromiseWritableStreamInterface;
 use Hibla\Stream\Traits\PromiseHelperTrait;
 
-class WritablePromiseStream implements WritablePromiseStreamInterface
+class PromiseWritableStream implements PromiseWritableStreamInterface
 {
     use PromiseHelperTrait;
 
@@ -31,17 +31,17 @@ class WritablePromiseStream implements WritablePromiseStreamInterface
      *
      * @param resource $resource A writable PHP stream resource
      * @param int $softLimit The size of the write buffer (in bytes) at which backpressure is applied
-     * @return static
+     * @return self
      */
-    public static function fromResource($resource, int $softLimit = 65536): static
+    public static function fromResource($resource, int $softLimit = 65536): self
     {
-        return new static(new WritableResourceStream($resource, $softLimit));
+        return new self(new WritableResourceStream($resource, $softLimit));
     }
 
     /**
      * Get the underlying stream resource.
      */
-    public function getStream(): WritableResourceStream
+    public function getWritableStream(): WritableResourceStream
     {
         return $this->stream;
     }
@@ -72,6 +72,7 @@ class WritablePromiseStream implements WritablePromiseStreamInterface
 
         // Set up promise resolution
         $checkWritten = function () use ($promise, $handler, $initialBufferSize, $bytesToWrite, &$cancelled): void {
+            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled is mutable
             if ($cancelled) {
                 return;
             }
@@ -94,6 +95,7 @@ class WritablePromiseStream implements WritablePromiseStreamInterface
             };
 
             $errorHandler = function ($error) use ($promise, &$cancelled, $drainHandler): void {
+                // @phpstan-ignore-next-line phpstan doesn't know that $cancelled is mutable
                 if ($cancelled) {
                     return;
                 }
@@ -139,6 +141,7 @@ class WritablePromiseStream implements WritablePromiseStreamInterface
         $cancelled = false;
 
         $finishHandler = function () use ($promise, &$cancelled): void {
+            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled is mutable
             if ($cancelled) {
                 return;
             }
@@ -146,6 +149,7 @@ class WritablePromiseStream implements WritablePromiseStreamInterface
         };
 
         $errorHandler = function ($error) use ($promise, &$cancelled, $finishHandler): void {
+            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled is mutable
             if ($cancelled) {
                 return;
             }
@@ -179,10 +183,13 @@ class WritablePromiseStream implements WritablePromiseStreamInterface
 
     /**
      * Delegate method calls to the underlying stream.
+     *
+     * @param array<int, mixed> $arguments
      */
     public function __call(string $method, array $arguments): mixed
     {
         if (method_exists($this->stream, $method)) {
+            // @phpstan-ignore-next-line method.dynamicName
             return $this->stream->$method(...$arguments);
         }
 

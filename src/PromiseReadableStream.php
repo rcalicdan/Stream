@@ -9,11 +9,11 @@ use Hibla\Promise\Interfaces\CancellablePromiseInterface;
 use Hibla\Stream\Exceptions\StreamException;
 use Hibla\Stream\Handlers\ReadAllHandler;
 use Hibla\Stream\Handlers\ReadLineHandler;
-use Hibla\Stream\Interfaces\ReadablePromiseStreamInterface;
+use Hibla\Stream\Interfaces\PromiseReadableStreamInterface;
 use Hibla\Stream\Interfaces\WritableStreamInterface;
 use Hibla\Stream\Traits\PromiseHelperTrait;
 
-class ReadablePromiseStreamResource implements ReadablePromiseStreamInterface
+class PromiseReadableStream implements PromiseReadableStreamInterface
 {
     use PromiseHelperTrait;
 
@@ -37,17 +37,17 @@ class ReadablePromiseStreamResource implements ReadablePromiseStreamInterface
      *
      * @param resource $resource A readable PHP stream resource
      * @param int $chunkSize The default amount of data to read in a single operation
-     * @return static
+     * @return self
      */
-    public static function fromResource($resource, int $chunkSize = 65536): static
+    public static function fromResource($resource, int $chunkSize = 65536): self
     {
-        return new static(new ReadableResourceStream($resource, $chunkSize));
+        return new self(new ReadableResourceStream($resource, $chunkSize));
     }
 
     /**
      * Get the underlying stream resource.
      */
-    public function getStream(): ReadableResourceStream
+    public function getReadableStream(): ReadableResourceStream
     {
         return $this->stream;
     }
@@ -154,6 +154,7 @@ class ReadablePromiseStreamResource implements ReadablePromiseStreamInterface
 
         // Track data being written
         $dataHandler = function (string $data) use ($destination, &$totalBytes, &$cancelled, &$hasError): void {
+            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled and $hasError are mutable
             if ($cancelled || $hasError) {
                 return;
             }
@@ -168,6 +169,7 @@ class ReadablePromiseStreamResource implements ReadablePromiseStreamInterface
 
         // When source ends
         $endHandler = function () use ($promise, $destination, $endDestination, &$totalBytes, &$cancelled, &$hasError, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler): void {
+            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled and $hasError are mutable
             if ($cancelled || $hasError) {
                 return;
             }
@@ -186,6 +188,7 @@ class ReadablePromiseStreamResource implements ReadablePromiseStreamInterface
 
         // When source errors
         $errorHandler = function ($error) use ($promise, $destination, &$cancelled, &$hasError, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler): void {
+            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled and $hasError are mutable
             if ($cancelled || $hasError) {
                 return;
             }
@@ -197,6 +200,7 @@ class ReadablePromiseStreamResource implements ReadablePromiseStreamInterface
 
         // When destination closes
         $closeHandler = function () use ($promise, $destination, &$cancelled, &$hasError, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler): void {
+            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled and $hasError are mutable
             if ($cancelled || $hasError) {
                 return;
             }
@@ -217,6 +221,7 @@ class ReadablePromiseStreamResource implements ReadablePromiseStreamInterface
 
         // Handle drain to resume
         $drainHandler = function () use (&$cancelled, &$hasError): void {
+            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled and $hasError are mutable
             if ($cancelled || $hasError) {
                 return;
             }
@@ -238,10 +243,13 @@ class ReadablePromiseStreamResource implements ReadablePromiseStreamInterface
 
     /**
      * Delegate method calls to the underlying stream.
+     *
+     * @param array<int, mixed> $arguments
      */
     public function __call(string $method, array $arguments): mixed
     {
         if (method_exists($this->stream, $method)) {
+            // @phpstan-ignore-next-line method.dynamicName
             return $this->stream->$method(...$arguments);
         }
 
@@ -263,14 +271,22 @@ class ReadablePromiseStreamResource implements ReadablePromiseStreamInterface
 
     private function detachPipeHandlers(
         WritableStreamInterface $destination,
-        callable $dataHandler,
-        callable $endHandler,
-        callable $errorHandler,
-        callable $closeHandler
+        ?callable $dataHandler,
+        ?callable $endHandler,
+        ?callable $errorHandler,
+        ?callable $closeHandler
     ): void {
-        $this->stream->removeListener('data', $dataHandler);
-        $this->stream->removeListener('end', $endHandler);
-        $this->stream->removeListener('error', $errorHandler);
-        $destination->removeListener('close', $closeHandler);
+        if ($dataHandler !== null) {
+            $this->stream->removeListener('data', $dataHandler);
+        }
+        if ($endHandler !== null) {
+            $this->stream->removeListener('end', $endHandler);
+        }
+        if ($errorHandler !== null) {
+            $this->stream->removeListener('error', $errorHandler);
+        }
+        if ($closeHandler !== null) {
+            $destination->removeListener('close', $closeHandler);
+        }
     }
 }
