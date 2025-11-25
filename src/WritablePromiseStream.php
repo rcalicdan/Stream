@@ -14,14 +14,14 @@ class WritablePromiseStream implements WritablePromiseStreamInterface
 {
     use PromiseHelperTrait;
 
-    private WritableStreamResource $stream;
+    private WritableResourceStream $stream;
 
     /**
      * Creates a promise-based wrapper around a WritableStreamResource.
      *
-     * @param WritableStreamResource $stream The underlying stream resource
+     * @param WritableResourceStream $stream The underlying stream resource
      */
-    public function __construct(WritableStreamResource $stream)
+    public function __construct(WritableResourceStream $stream)
     {
         $this->stream = $stream;
     }
@@ -35,13 +35,13 @@ class WritablePromiseStream implements WritablePromiseStreamInterface
      */
     public static function fromResource($resource, int $softLimit = 65536): static
     {
-        return new static(new WritableStreamResource($resource, $softLimit));
+        return new static(new WritableResourceStream($resource, $softLimit));
     }
 
     /**
      * Get the underlying stream resource.
      */
-    public function getStream(): WritableStreamResource
+    public function getStream(): WritableResourceStream
     {
         return $this->stream;
     }

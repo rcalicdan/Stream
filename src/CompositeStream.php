@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace Hibla\Stream;
 
-use Hibla\Promise\Interfaces\CancellablePromiseInterface;
-use Hibla\Stream\Exceptions\StreamException;
+use Evenement\EventEmitterTrait;
 use Hibla\Stream\Interfaces\DuplexStreamInterface;
 use Hibla\Stream\Interfaces\ReadableStreamInterface;
 use Hibla\Stream\Interfaces\WritableStreamInterface;
-use Hibla\Stream\Traits\EventEmitterTrait;
-use Hibla\Stream\Traits\PromiseHelperTrait;
 
+/**
+ * Creates a duplex stream from separate readable and writable streams.
+ * This is useful for combining independent streams into a single bidirectional interface.
+ */
 class CompositeStream implements DuplexStreamInterface
 {
     use EventEmitterTrait;
-    use PromiseHelperTrait;
 
     private ReadableStreamInterface $readable;
     private WritableStreamInterface $writable;
@@ -38,50 +38,28 @@ class CompositeStream implements DuplexStreamInterface
     }
 
     /**
-     * @inheritdoc
+     * Get the readable side of the stream.
      */
-    public function read(?int $length = null): CancellablePromiseInterface
+    public function getReadable(): ReadableStreamInterface
     {
-        if ($this->closed) {
-            return $this->createRejectedPromise(new StreamException('Stream is closed'));
-        }
-
-        return $this->readable->read($length);
+        return $this->readable;
     }
+
+    /**
+     * Get the writable side of the stream.
+     */
+    public function getWritable(): WritableStreamInterface
+    {
+        return $this->writable;
+    }
+
+    // ReadableStreamInterface methods
 
     /**
      * @inheritdoc
      */
-    public function readLine(?int $maxLength = null): CancellablePromiseInterface
+    public function pipe(WritableStreamInterface $destination, array $options = []): WritableStreamInterface
     {
-        if ($this->closed) {
-            return $this->createRejectedPromise(new StreamException('Stream is closed'));
-        }
-
-        return $this->readable->readLine($maxLength);
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function readAll(int $maxLength = 1048576): CancellablePromiseInterface
-    {
-        if ($this->closed) {
-            return $this->createRejectedPromise(new StreamException('Stream is closed'));
-        }
-
-        return $this->readable->readAll($maxLength);
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
-    {
-        if ($this->closed) {
-            return $this->createRejectedPromise(new StreamException('Stream is closed'));
-        }
-
         return $this->readable->pipe($destination, $options);
     }
 
@@ -132,10 +110,21 @@ class CompositeStream implements DuplexStreamInterface
     /**
      * @inheritdoc
      */
-    public function write(string $data): CancellablePromiseInterface
+    public function seek(int $offset, int $whence = SEEK_SET): bool
+    {
+        return $this->readable->seek($offset, $whence);
+    }
+
+    // WritableStreamInterface methods
+
+    /**
+     * @inheritdoc
+     */
+    public function write(string $data): bool
     {
         if ($this->closed) {
-            return $this->createRejectedPromise(new StreamException('Stream is closed'));
+            $this->emit('error', [new \RuntimeException('Stream is closed')]);
+            return false;
         }
 
         return $this->writable->write($data);
@@ -144,27 +133,14 @@ class CompositeStream implements DuplexStreamInterface
     /**
      * @inheritdoc
      */
-    public function writeLine(string $data): CancellablePromiseInterface
+    public function end(?string $data = null): void
     {
         if ($this->closed) {
-            return $this->createRejectedPromise(new StreamException('Stream is closed'));
-        }
-
-        return $this->writable->writeLine($data);
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function end(?string $data = null): CancellablePromiseInterface
-    {
-        if ($this->closed) {
-            return $this->createResolvedVoidPromise();
+            return;
         }
 
         $this->readable->pause();
-
-        return $this->writable->end($data);
+        $this->writable->end($data);
     }
 
     /**
@@ -206,30 +182,19 @@ class CompositeStream implements DuplexStreamInterface
         $this->removeAllListeners();
     }
 
-    /**
-     * @inheritdoc
-     */
-    public function getReadable(): ReadableStreamInterface
-    {
-        return $this->readable;
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function getWritable(): WritableStreamInterface
-    {
-        return $this->writable;
-    }
-
     private function setupEventForwarding(): void
     {
-        $this->forwardEvents($this->readable, ['data', 'end', 'pause', 'resume']);
+        // Forward readable events
+        $this->forwardEvents($this->readable, ['data', 'end', 'pause', 'resume', 'pipe', 'unpipe']);
+        
+        // Forward writable events
         $this->forwardEvents($this->writable, ['drain', 'finish']);
 
-        $this->readable->on('error', fn ($error) => $this->emit('error', $error));
-        $this->writable->on('error', fn ($error) => $this->emit('error', $error));
+        // Forward error events from both
+        $this->readable->on('error', fn (...$args) => $this->emit('error', $args));
+        $this->writable->on('error', fn (...$args) => $this->emit('error', $args));
 
+        // Auto-close when both sides are closed
         $this->readable->on('close', function () {
             if (! $this->closed && ! $this->writable->isWritable()) {
                 $this->close();
@@ -250,9 +215,7 @@ class CompositeStream implements DuplexStreamInterface
     private function forwardEvents(object $source, array $events): void
     {
         foreach ($events as $event) {
-            $source->on($event, function (...$args) use ($event) {
-                $this->emit($event, ...$args);
-            });
+            $source->on($event, fn (...$args) => $this->emit($event, $args));
         }
     }
 

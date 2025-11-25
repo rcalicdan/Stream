@@ -4,18 +4,17 @@ declare(strict_types=1);
 
 namespace Hibla\Stream;
 
-use Hibla\Promise\Interfaces\CancellablePromiseInterface;
+use Evenement\EventEmitterTrait;
 use Hibla\Stream\Exceptions\StreamException;
 use Hibla\Stream\Interfaces\DuplexStreamInterface;
 use Hibla\Stream\Interfaces\WritableStreamInterface;
-use Hibla\Stream\Traits\EventEmitterTrait;
 
-class DuplexStream implements DuplexStreamInterface
+class DuplexResourceStream implements DuplexStreamInterface
 {
     use EventEmitterTrait;
 
-    private ReadableStream $readable;
-    private WritableStream $writable;
+    private ReadableResourceStream $readable;
+    private WritableResourceStream $writable;
     private bool $closed = false;
 
     /**
@@ -34,66 +33,34 @@ class DuplexStream implements DuplexStreamInterface
             throw new StreamException('Resource must be opened in read+write mode (e.g., "r+", "w+", "a+")');
         }
 
-        $this->readable = new ReadableStream($resource, $readChunkSize);
-        $this->writable = new WritableStream($resource, $writeSoftLimit);
+        $this->readable = new ReadableResourceStream($resource, $readChunkSize);
+        $this->writable = new WritableResourceStream($resource, $writeSoftLimit);
 
-        $this->forwardEvents($this->readable, ['data', 'end', 'pause', 'resume']);
-        $this->forwardEvents($this->writable, ['drain', 'finish']);
-
-        $this->readable->on('error', fn ($error) => $this->emit('error', $error));
-        $this->writable->on('error', fn ($error) => $this->emit('error', $error));
-
-        $this->readable->on('close', function () {
-            if (! $this->closed) {
-                $this->close();
-            }
-        });
-
-        $this->writable->on('close', function () {
-            if (! $this->closed) {
-                $this->close();
-            }
-        });
+        $this->setupEventForwarding();
     }
 
     /**
-     * @inheritdoc
+     * Get the readable side of the stream.
      */
-    public function read(?int $length = null): CancellablePromiseInterface
+    public function getReadable(): ReadableResourceStream
     {
-        return $this->readable->read($length);
+        return $this->readable;
     }
 
     /**
-     * @inheritdoc
+     * Get the writable side of the stream.
      */
-    public function readLine(?int $maxLength = null): CancellablePromiseInterface
+    public function getWritable(): WritableResourceStream
     {
-        return $this->readable->readLine($maxLength);
+        return $this->writable;
     }
 
     /**
      * @inheritdoc
      */
-    public function readAll(int $maxLength = 1048576): CancellablePromiseInterface
-    {
-        return $this->readable->readAll($maxLength);
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function pipe(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
+    public function pipe(WritableStreamInterface $destination, array $options = []): WritableStreamInterface
     {
         return $this->readable->pipe($destination, $options);
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function seek(int $offset, int $whence = SEEK_SET): bool
-    {
-        return $this->readable->seek($offset, $whence);
     }
 
     /**
@@ -141,7 +108,17 @@ class DuplexStream implements DuplexStreamInterface
     /**
      * @inheritdoc
      */
-    public function write(string $data): CancellablePromiseInterface
+    public function seek(int $offset, int $whence = SEEK_SET): bool
+    {
+        return $this->readable->seek($offset, $whence);
+    }
+
+    // WritableStreamInterface methods
+
+    /**
+     * @inheritdoc
+     */
+    public function write(string $data): bool
     {
         return $this->writable->write($data);
     }
@@ -149,19 +126,10 @@ class DuplexStream implements DuplexStreamInterface
     /**
      * @inheritdoc
      */
-    public function writeLine(string $data): CancellablePromiseInterface
-    {
-        return $this->writable->writeLine($data);
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function end(?string $data = null): CancellablePromiseInterface
+    public function end(?string $data = null): void
     {
         $this->readable->pause();
-
-        return $this->writable->end($data);
+        $this->writable->end($data);
     }
 
     /**
@@ -198,16 +166,40 @@ class DuplexStream implements DuplexStreamInterface
         $this->removeAllListeners();
     }
 
+    private function setupEventForwarding(): void
+    {
+        // Forward readable events
+        $this->forwardEvents($this->readable, ['data', 'end', 'pause', 'resume', 'pipe', 'unpipe']);
+        
+        // Forward writable events
+        $this->forwardEvents($this->writable, ['drain', 'finish']);
+
+        // Forward error events from both
+        $this->readable->on('error', fn (...$args) => $this->emit('error', $args));
+        $this->writable->on('error', fn (...$args) => $this->emit('error', $args));
+
+        // Auto-close when both sides close
+        $this->readable->on('close', function () {
+            if (! $this->closed) {
+                $this->close();
+            }
+        });
+
+        $this->writable->on('close', function () {
+            if (! $this->closed) {
+                $this->close();
+            }
+        });
+    }
+
     /**
-     * @param ReadableStream|WritableStream $source
+     * @param ReadableResourceStream|WritableResourceStream $source
      * @param array<string> $events
      */
     private function forwardEvents(object $source, array $events): void
     {
         foreach ($events as $event) {
-            $source->on($event, function (...$args) use ($event) {
-                $this->emit($event, ...$args);
-            });
+            $source->on($event, fn (...$args) => $this->emit($event, $args));
         }
     }
 

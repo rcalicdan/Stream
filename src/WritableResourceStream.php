@@ -9,7 +9,7 @@ use Hibla\Stream\Exceptions\StreamException;
 use Hibla\Stream\Handlers\WritableStreamHandler;
 use Hibla\Stream\Interfaces\WritableStreamInterface;
 
-class WritableStreamResource implements WritableStreamInterface
+class WritableResourceStream implements WritableStreamInterface
 {
     use EventEmitterTrait;
 
