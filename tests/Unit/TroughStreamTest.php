@@ -5,23 +5,25 @@ declare(strict_types=1);
 use Hibla\EventLoop\Loop;
 use Hibla\Stream\Exceptions\StreamException;
 use Hibla\Stream\ThroughStream;
-use Hibla\Stream\WritableStream;
+use Hibla\Stream\WritableResourceStream;
 
 describe('ThroughStream', function () {
+    beforeEach(function () {
+        Loop::reset();
+    });
+
     test('can be created without transformer', function () {
         $stream = new ThroughStream();
 
         expect($stream)->toBeInstanceOf(ThroughStream::class);
         expect($stream->isReadable())->toBeTrue();
         expect($stream->isWritable())->toBeTrue();
-        expect($stream->isPaused())->toBeFalse();
-        expect($stream->isEnding())->toBeFalse();
 
         $stream->close();
     });
 
     test('can be created with transformer', function () {
-        $stream = new ThroughStream(fn ($data) => strtoupper($data));
+        $stream = new ThroughStream(fn($data) => strtoupper($data));
 
         expect($stream->isReadable())->toBeTrue();
         expect($stream->isWritable())->toBeTrue();
@@ -37,10 +39,10 @@ describe('ThroughStream', function () {
             $received = $data;
         });
 
-        $bytesWritten = $stream->write('Hello World')->await();
+        $writeSuccess = $stream->write('Hello World');
 
         expect($received)->toBe('Hello World');
-        expect($bytesWritten)->toBeGreaterThan(0);
+        expect($writeSuccess)->toBeTrue();
 
         $stream->close();
     });
@@ -53,39 +55,24 @@ describe('ThroughStream', function () {
             $chunks[] = $data;
         });
 
-        $stream->write('chunk1')->await();
-        $stream->write('chunk2')->await();
-        $stream->write('chunk3')->await();
+        $stream->write('chunk1');
+        $stream->write('chunk2');
+        $stream->write('chunk3');
 
         expect($chunks)->toBe(['chunk1', 'chunk2', 'chunk3']);
 
         $stream->close();
     });
 
-    test('writeLine adds newline', function () {
-        $stream = new ThroughStream();
-
-        $received = null;
-        $stream->on('data', function ($data) use (&$received) {
-            $received = $data;
-        });
-
-        $stream->writeLine('Hello')->await();
-
-        expect($received)->toBe("Hello\n");
-
-        $stream->close();
-    });
-
     test('transforms data when transformer is provided', function () {
-        $stream = new ThroughStream(fn ($data) => strtoupper($data));
+        $stream = new ThroughStream(fn($data) => strtoupper($data));
 
         $received = null;
         $stream->on('data', function ($data) use (&$received) {
             $received = $data;
         });
 
-        $stream->write('hello world')->await();
+        $stream->write('hello world');
 
         expect($received)->toBe('HELLO WORLD');
 
@@ -93,14 +80,14 @@ describe('ThroughStream', function () {
     });
 
     test('transformer can modify data length', function () {
-        $stream = new ThroughStream(fn ($data) => str_repeat($data, 2));
+        $stream = new ThroughStream(fn($data) => str_repeat($data, 2));
 
         $received = null;
         $stream->on('data', function ($data) use (&$received) {
             $received = $data;
         });
 
-        $stream->write('test')->await();
+        $stream->write('test');
 
         expect($received)->toBe('testtest');
 
@@ -126,7 +113,7 @@ describe('ThroughStream', function () {
             $closed = true;
         });
 
-        $stream->end()->await();
+        $stream->end();
 
         expect($ended)->toBeTrue();
         expect($finished)->toBeTrue();
@@ -143,8 +130,8 @@ describe('ThroughStream', function () {
             $chunks[] = $data;
         });
 
-        $stream->write('first')->await();
-        $stream->end('last')->await();
+        $stream->write('first');
+        $stream->end('last');
 
         expect($chunks)->toBe(['first', 'last']);
     });
@@ -152,30 +139,22 @@ describe('ThroughStream', function () {
     test('ending multiple times is safe', function () {
         $stream = new ThroughStream();
 
-        $stream->end()->await();
-        $stream->end()->await();
-        $stream->end()->await();
+        $stream->end();
+        $stream->end();
+        $stream->end();
 
-        expect($stream->isEnding())->toBeTrue();
         expect($stream->isWritable())->toBeFalse();
     });
 
     test('cannot write after ending', function () {
         $stream = new ThroughStream();
 
-        $stream->end()->await();
+        $stream->end();
 
-        $rejected = false;
+        $writeSuccess = $stream->write('test');
 
-        try {
-            $stream->write('test')->await();
-        } catch (Throwable $e) {
-            $rejected = true;
-            expect($e)->toBeInstanceOf(StreamException::class);
-            expect($e->getMessage())->toContain('not writable');
-        }
-
-        expect($rejected)->toBeTrue();
+        expect($writeSuccess)->toBeFalse();
+        expect($stream->isWritable())->toBeFalse();
     });
 
     test('cannot write after closing', function () {
@@ -183,17 +162,10 @@ describe('ThroughStream', function () {
 
         $stream->close();
 
-        $rejected = false;
+        $writeSuccess = $stream->write('test');
 
-        try {
-            $stream->write('test')->await();
-        } catch (Throwable $e) {
-            $rejected = true;
-            expect($e)->toBeInstanceOf(StreamException::class);
-            expect($e->getMessage())->toContain('not writable');
-        }
-
-        expect($rejected)->toBeTrue();
+        expect($writeSuccess)->toBeFalse();
+        expect($stream->isWritable())->toBeFalse();
     });
 
     test('can pause stream', function () {
@@ -206,7 +178,6 @@ describe('ThroughStream', function () {
 
         $stream->pause();
 
-        expect($stream->isPaused())->toBeTrue();
         expect($paused)->toBeTrue();
 
         $stream->close();
@@ -223,13 +194,12 @@ describe('ThroughStream', function () {
         $stream->pause();
         $stream->resume();
 
-        expect($stream->isPaused())->toBeFalse();
         expect($resumed)->toBeTrue();
 
         $stream->close();
     });
 
-    test('emits drain after resume when draining', function () {
+    test('emits drain after resume', function () {
         $stream = new ThroughStream();
 
         $drained = false;
@@ -238,7 +208,7 @@ describe('ThroughStream', function () {
         });
 
         $stream->pause();
-        $stream->write('test')->await();
+        $stream->write('test');
         $stream->resume();
 
         expect($drained)->toBeTrue();
@@ -249,7 +219,7 @@ describe('ThroughStream', function () {
     test('pause when not readable does nothing', function () {
         $stream = new ThroughStream();
 
-        $stream->end()->await();
+        $stream->end();
         $stream->pause();
 
         expect($stream->isReadable())->toBeFalse();
@@ -258,20 +228,10 @@ describe('ThroughStream', function () {
     test('resume when not readable does nothing', function () {
         $stream = new ThroughStream();
 
-        $stream->end()->await();
+        $stream->end();
         $stream->resume();
 
         expect($stream->isReadable())->toBeFalse();
-    });
-
-    test('isEof returns correct state', function () {
-        $stream = new ThroughStream();
-
-        expect($stream->isEof())->toBeFalse();
-
-        $stream->end()->await();
-
-        expect($stream->isEof())->toBeTrue();
     });
 
     test('can close stream', function () {
@@ -304,99 +264,48 @@ describe('ThroughStream', function () {
         expect($closeCount)->toBe(1);
     });
 
-    test('read method throws error', function () {
-        $stream = new ThroughStream();
-
-        $rejected = false;
-
-        try {
-            $stream->read()->await();
-        } catch (Throwable $e) {
-            $rejected = true;
-            expect($e)->toBeInstanceOf(StreamException::class);
-            expect($e->getMessage())->toContain('does not support read()');
-        }
-
-        expect($rejected)->toBeTrue();
-        $stream->close();
-    });
-
-    test('readLine method throws error', function () {
-        $stream = new ThroughStream();
-
-        $rejected = false;
-
-        try {
-            $stream->readLine()->await();
-        } catch (Throwable $e) {
-            $rejected = true;
-            expect($e)->toBeInstanceOf(StreamException::class);
-            expect($e->getMessage())->toContain('does not support readLine()');
-        }
-
-        expect($rejected)->toBeTrue();
-        $stream->close();
-    });
-
-    test('readAll method throws error', function () {
-        $stream = new ThroughStream();
-
-        $rejected = false;
-
-        try {
-            $stream->readAll()->await();
-        } catch (Throwable $e) {
-            $rejected = true;
-            expect($e)->toBeInstanceOf(StreamException::class);
-            expect($e->getMessage())->toContain('does not support readAll()');
-        }
-
-        expect($rejected)->toBeTrue();
-        $stream->close();
-    });
-
     test('emits error when transformer throws', function () {
         $stream = new ThroughStream(function ($data) {
             throw new Exception('Transform error');
         });
 
         $error = null;
+        $closed = false;
+
         $stream->on('error', function ($e) use (&$error) {
             $error = $e;
         });
 
-        $rejected = false;
+        $stream->on('close', function () use (&$closed) {
+            $closed = true;
+        });
 
-        try {
-            $stream->write('test')->await();
-        } catch (Throwable $e) {
-            $rejected = true;
-        }
+        $writeSuccess = $stream->write('test');
 
         expect($error)->toBeInstanceOf(Exception::class);
         expect($error->getMessage())->toBe('Transform error');
-        expect($rejected)->toBeTrue();
+        expect($writeSuccess)->toBeFalse();
+        expect($closed)->toBeTrue();
     });
 
-    test('handles backpressure with pause', function () {
+    test('write returns false when paused', function () {
         $stream = new ThroughStream();
 
         $stream->pause();
 
-        $result = $stream->write('test')->await();
+        $result = $stream->write('test');
 
-        expect($result)->toBe(0); // Indicates backpressure
-        expect($stream->isPaused())->toBeTrue();
+        expect($result)->toBeFalse();
 
         $stream->close();
     });
 
-    test('write returns data length when not paused', function () {
+    test('write returns true when not paused', function () {
         $stream = new ThroughStream();
 
-        $result = $stream->write('test data')->await();
+        $result = $stream->write('test data');
 
-        expect($result)->toBe(strlen('test data'));
+        expect($result)->toBeTrue();
 
         $stream->close();
     });
@@ -404,22 +313,25 @@ describe('ThroughStream', function () {
     test('can pipe to writable stream', function () {
         $file = createTempFile();
         $resource = fopen($file, 'w');
-        $destination = new WritableStream($resource);
+        $destination = new WritableResourceStream($resource);
 
         $stream = new ThroughStream();
 
-        $totalBytes = 0;
-        $stream->pipe($destination)->then(function ($bytes) use (&$totalBytes) {
-            $totalBytes = $bytes;
+        $finishEmitted = false;
+
+        $destination->on('finish', function () use (&$finishEmitted) {
+            $finishEmitted = true;
+            Loop::stop();
         });
 
-        $stream->write('test data')->await();
-        $stream->end()->await();
+        $stream->pipe($destination);
+        $stream->write('test data');
+        $stream->end();
 
         Loop::run();
 
         expect(file_get_contents($file))->toBe('test data');
-        expect($totalBytes)->toBeGreaterThan(0);
+        expect($finishEmitted)->toBeTrue();
 
         cleanupTempFile($file);
     });
@@ -427,17 +339,18 @@ describe('ThroughStream', function () {
     test('pipe ends destination by default', function () {
         $file = createTempFile();
         $resource = fopen($file, 'w');
-        $destination = new WritableStream($resource);
+        $destination = new WritableResourceStream($resource);
 
         $stream = new ThroughStream();
 
         $closed = false;
         $destination->on('close', function () use (&$closed) {
             $closed = true;
+            Loop::stop();
         });
 
         $stream->pipe($destination);
-        $stream->end()->await();
+        $stream->end();
 
         Loop::run();
 
@@ -449,40 +362,20 @@ describe('ThroughStream', function () {
     test('pipe does not end destination when end option is false', function () {
         $file = createTempFile();
         $resource = fopen($file, 'w');
-        $destination = new WritableStream($resource);
+        $destination = new WritableResourceStream($resource);
 
         $stream = new ThroughStream();
 
+        $stream->on('end', function () {
+            Loop::stop();
+        });
+
         $stream->pipe($destination, ['end' => false]);
-        $stream->end()->await();
+        $stream->end();
 
         Loop::run();
 
         expect($destination->isWritable())->toBeTrue();
-
-        $destination->close();
-        cleanupTempFile($file);
-    });
-
-    test('cannot pipe when not readable', function () {
-        $file = createTempFile();
-        $resource = fopen($file, 'w');
-        $destination = new WritableStream($resource);
-
-        $stream = new ThroughStream();
-        $stream->end()->await();
-
-        $rejected = false;
-
-        try {
-            $stream->pipe($destination)->await();
-        } catch (Throwable $e) {
-            $rejected = true;
-            expect($e)->toBeInstanceOf(StreamException::class);
-            expect($e->getMessage())->toContain('not readable');
-        }
-
-        expect($rejected)->toBeTrue();
 
         $destination->close();
         cleanupTempFile($file);
@@ -496,9 +389,9 @@ describe('ThroughStream', function () {
             $dataEmitted = true;
         });
 
-        $stream->write('')->await();
+        $stream->write('');
 
-        expect($dataEmitted)->toBeTrue(); // Empty string should still emit
+        expect($dataEmitted)->toBeTrue();
 
         $stream->close();
     });
@@ -512,12 +405,20 @@ describe('ThroughStream', function () {
         });
 
         for ($i = 1; $i <= 10; $i++) {
-            $stream->write("chunk$i")->await();
+            $stream->write("chunk$i");
         }
 
         expect($received)->toBe([
-            'chunk1', 'chunk2', 'chunk3', 'chunk4', 'chunk5',
-            'chunk6', 'chunk7', 'chunk8', 'chunk9', 'chunk10',
+            'chunk1',
+            'chunk2',
+            'chunk3',
+            'chunk4',
+            'chunk5',
+            'chunk6',
+            'chunk7',
+            'chunk8',
+            'chunk9',
+            'chunk10',
         ]);
 
         $stream->close();
@@ -526,22 +427,22 @@ describe('ThroughStream', function () {
     test('removes all listeners on close', function () {
         $stream = new ThroughStream();
 
-        $stream->on('data', fn () => null);
-        $stream->on('end', fn () => null);
-        $stream->on('error', fn () => null);
+        $stream->on('data', fn() => null);
+        $stream->on('end', fn() => null);
+        $stream->on('error', fn() => null);
 
         $stream->close();
 
-        $rejected = false;
+        $errorEmitted = false;
 
-        try {
-            $stream->write('test')->await();
-        } catch (Throwable $e) {
-            $rejected = true;
-            expect($e)->toBeInstanceOf(StreamException::class);
-        }
+        $stream->on('error', function () use (&$errorEmitted) {
+            $errorEmitted = true;
+        });
 
-        expect($rejected)->toBeTrue();
+        $writeSuccess = $stream->write('test');
+
+        expect($writeSuccess)->toBeFalse();
+        expect($errorEmitted)->toBeTrue();
     });
 
     test('transformer with conditional logic', function () {
@@ -558,8 +459,8 @@ describe('ThroughStream', function () {
             $results[] = $data;
         });
 
-        $stream->write('Normal Text')->await();
-        $stream->write('ERROR: Something went wrong')->await();
+        $stream->write('Normal Text');
+        $stream->write('ERROR: Something went wrong');
 
         expect($results[0])->toBe('normal text');
         expect($results[1])->toBe('ERROR: SOMETHING WENT WRONG');
@@ -575,10 +476,100 @@ describe('ThroughStream', function () {
             $received = $data;
         });
 
-        $stream->write('unchanged')->await();
+        $stream->write('unchanged');
 
         expect($received)->toBe('unchanged');
 
         $stream->close();
+    });
+
+    test('pipe handles backpressure', function () {
+        $file = createTempFile();
+        $resource = fopen($file, 'w');
+        $destination = new WritableResourceStream($resource, 1024); // Small buffer
+
+        $stream = new ThroughStream();
+
+        $pauseEmitted = false;
+        $drainEmitted = false;
+
+        $stream->on('pause', function () use (&$pauseEmitted) {
+            $pauseEmitted = true;
+        });
+
+        $destination->on('drain', function () use (&$drainEmitted) {
+            $drainEmitted = true;
+        });
+
+        $destination->on('finish', function () {
+            Loop::stop();
+        });
+
+        $stream->pipe($destination);
+
+        $largeData = str_repeat('x', 100000);
+        $stream->write($largeData);
+        $stream->end();
+
+        Loop::run();
+
+        expect(file_get_contents($file))->toBe($largeData);
+        expect($pauseEmitted)->toBeTrue();
+        expect($drainEmitted)->toBeTrue();
+
+        cleanupTempFile($file);
+    });
+
+    test('transformer can return empty string', function () {
+        $stream = new ThroughStream(fn($data) => '');
+
+        $received = null;
+        $stream->on('data', function ($data) use (&$received) {
+            $received = $data;
+        });
+
+        $stream->write('test');
+
+        expect($received)->toBe('');
+
+        $stream->close();
+    });
+
+    test('end with transformer applies transformation', function () {
+        $stream = new ThroughStream(fn($data) => strtoupper($data));
+
+        $chunks = [];
+        $stream->on('data', function ($data) use (&$chunks) {
+            $chunks[] = $data;
+        });
+
+        $stream->end('final');
+
+        expect($chunks)->toBe(['FINAL']);
+    });
+
+    test('error in transformer during end closes stream', function () {
+        $stream = new ThroughStream(function ($data) {
+            throw new Exception('End error');
+        });
+
+        $error = null;
+        $closed = false;
+
+        $stream->on('error', function ($e) use (&$error) {
+            $error = $e;
+        });
+
+        $stream->on('close', function () use (&$closed) {
+            $closed = true;
+        });
+
+        $stream->end('data');
+
+        expect($error)->toBeInstanceOf(Exception::class);
+        expect($error->getMessage())->toBe('End error');
+        expect($closed)->toBeTrue();
+        expect($stream->isWritable())->toBeFalse();
+        expect($stream->isReadable())->toBeFalse();
     });
 });
