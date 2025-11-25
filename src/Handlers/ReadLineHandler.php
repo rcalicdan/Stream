@@ -30,7 +30,7 @@ class ReadLineHandler
             return $line;
         }
 
-        if (strlen($buffer) >= $maxLength) {
+        if (\strlen($buffer) >= $maxLength) {
             $line = substr($buffer, 0, $maxLength);
             $buffer = substr($buffer, $maxLength);
 

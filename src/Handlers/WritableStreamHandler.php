@@ -10,28 +10,23 @@ use Hibla\Stream\Exceptions\StreamException;
 
 class WritableStreamHandler
 {
-    /** @var resource */
-    private $resource;
-    private int $softLimit;
     private string $writeBuffer = '';
     private ?string $watcherId = null;
     private int $totalWritten = 0;
 
-    /** @var callable(string, mixed=): void */
-    private $emitCallback;
-
-    /** @var callable(): void */
-    private $closeCallback;
-
     /**
      * @param resource $resource
+     * @param callable(string, mixed=): void $emitCallback
+     * @param callable(): void $closeCallback
+     * @param callable(): bool $isEndingCallback
      */
-    public function __construct($resource, int $softLimit, callable $emitCallback, callable $closeCallback)
-    {
-        $this->resource = $resource;
-        $this->softLimit = $softLimit;
-        $this->emitCallback = $emitCallback;
-        $this->closeCallback = $closeCallback;
+    public function __construct(
+        private $resource,
+        private int $softLimit,
+        private $emitCallback,
+        private $closeCallback,
+        private $isEndingCallback
+    ) {
     }
 
     public function getBufferLength(): int
@@ -61,7 +56,7 @@ class WritableStreamHandler
 
         $this->watcherId = Loop::addStreamWatcher(
             $this->resource,
-            fn () => $this->handleWritable($ending),
+            fn () => $this->handleWritable(),
             StreamWatcher::TYPE_WRITE
         );
     }
@@ -74,7 +69,7 @@ class WritableStreamHandler
         }
     }
 
-    public function handleWritable(bool $ending = false): void
+    public function handleWritable(): void
     {
         if ($this->writeBuffer === '') {
             return;
@@ -105,8 +100,8 @@ class WritableStreamHandler
             $this->stopWatching();
             ($this->emitCallback)('drain');
 
-            // If ending, emit finish
-            if ($ending) {
+            // Check if we're ending using the callback
+            if (($this->isEndingCallback)()) {
                 ($this->emitCallback)('finish');
             }
         }

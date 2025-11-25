@@ -22,7 +22,7 @@ class DuplexResourceStream extends EventEmitter implements DuplexStreamInterface
      */
     public function __construct($resource, int $readChunkSize = 8192, int $writeSoftLimit = 65536)
     {
-        if (! is_resource($resource)) {
+        if (! \is_resource($resource)) {
             throw new StreamException('Invalid resource provided');
         }
 
@@ -132,13 +132,8 @@ class DuplexResourceStream extends EventEmitter implements DuplexStreamInterface
 
     private function setupEventForwarding(): void
     {
-        // Forward readable events
         Util::forwardEvents($this->readable, $this, ['data', 'end', 'pause', 'resume', 'pipe', 'unpipe']);
-        
-        // Forward writable events
         Util::forwardEvents($this->writable, $this, ['drain', 'finish']);
-
-        // Forward error events from both
         Util::forwardEvents($this->readable, $this, ['error']);
         Util::forwardEvents($this->writable, $this, ['error']);
 

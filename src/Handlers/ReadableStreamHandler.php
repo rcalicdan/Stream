@@ -11,9 +11,6 @@ use Hibla\Stream\Exceptions\StreamException;
 
 class ReadableStreamHandler
 {
-    /** @var resource */
-    private $resource;
-    private int $chunkSize;
     private string $buffer = '';
     private ?string $watcherId = null;
 
@@ -30,8 +27,8 @@ class ReadableStreamHandler
      * @param callable(string): bool $hasListenersCallback
      */
     public function __construct(
-        $resource,
-        int $chunkSize,
+        private $resource,
+        private int $chunkSize,
         private $emitCallback,
         private $closeCallback,
         private $isEofCallback,
@@ -39,8 +36,6 @@ class ReadableStreamHandler
         private $isPausedCallback,
         private $hasListenersCallback
     ) {
-        $this->resource = $resource;
-        $this->chunkSize = $chunkSize;
     }
 
     public function getBuffer(): string

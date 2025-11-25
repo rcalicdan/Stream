@@ -194,12 +194,12 @@ class WritableResourceStream extends EventEmitter implements WritableStreamInter
             function (string $event, ...$args): void {
                 $this->emit($event, $args);
 
-                // Auto-close on finish when ending
                 if ($event === 'finish' && $this->ending) {
                     $this->close();
                 }
             },
-            fn () => $this->close()
+            fn () => $this->close(),
+            fn () => $this->ending
         );
     }
 

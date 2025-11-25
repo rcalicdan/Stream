@@ -37,7 +37,7 @@ class ReadAllHandler
                 return;
             }
 
-            if (strlen($buffer) >= $maxLength) {
+            if (\strlen($buffer) >= $maxLength) {
                 $promise->resolve($buffer);
 
                 return;
