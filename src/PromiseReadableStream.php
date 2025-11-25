@@ -13,22 +13,22 @@ use Hibla\Stream\Interfaces\PromiseReadableStreamInterface;
 use Hibla\Stream\Interfaces\WritableStreamInterface;
 use Hibla\Stream\Traits\PromiseHelperTrait;
 
-class PromiseReadableStream implements PromiseReadableStreamInterface
+class PromiseReadableStream extends ReadableResourceStream implements PromiseReadableStreamInterface
 {
     use PromiseHelperTrait;
 
-    private ReadableResourceStream $stream;
     private ReadLineHandler $lineHandler;
     private ReadAllHandler $allHandler;
 
     /**
-     * Creates a promise-based wrapper around a ReadableStreamResource.
+     * Creates a promise-based readable stream.
      *
-     * @param ReadableResourceStream $stream The underlying stream resource
+     * @param resource $resource A readable PHP stream resource
+     * @param int $chunkSize The default amount of data to read in a single operation
      */
-    public function __construct(ReadableResourceStream $stream)
+    public function __construct($resource, int $chunkSize = 65536)
     {
-        $this->stream = $stream;
+        parent::__construct($resource, $chunkSize);
         $this->initializeHandlers();
     }
 
@@ -41,43 +41,34 @@ class PromiseReadableStream implements PromiseReadableStreamInterface
      */
     public static function fromResource($resource, int $chunkSize = 65536): self
     {
-        return new self(new ReadableResourceStream($resource, $chunkSize));
-    }
-
-    /**
-     * Get the underlying stream resource.
-     */
-    public function getReadableStream(): ReadableResourceStream
-    {
-        return $this->stream;
+        return new self($resource, $chunkSize);
     }
 
     /**
      * @inheritdoc
      */
-    public function read(?int $length = null): CancellablePromiseInterface
+    public function readAsync(?int $length = null): CancellablePromiseInterface
     {
-        if (! $this->stream->isReadable()) {
+        if (!$this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
-        if ($this->stream->isEof()) {
-            //@phpstan-ignore-next-line
+        if ($this->isEof()) {
             return $this->createResolvedPromise(null);
         }
 
         /** @var CancellablePromise<string|null> $promise */
         $promise = new CancellablePromise();
 
-        $handler = $this->stream->getHandler();
+        $handler = $this->getHandler();
         $handler->queueRead($length, $promise);
 
         $promise->setCancelHandler(function () use ($promise, $handler): void {
             $handler->cancelRead($promise);
         });
 
-        if ($this->stream->isPaused()) {
-            $this->stream->resume();
+        if ($this->isPaused()) {
+            $this->resume();
         }
 
         return $promise;
@@ -86,27 +77,24 @@ class PromiseReadableStream implements PromiseReadableStreamInterface
     /**
      * @inheritdoc
      */
-    public function readLine(?int $maxLength = null): CancellablePromiseInterface
+    public function readLineAsync(?int $maxLength = null): CancellablePromiseInterface
     {
-        if (! $this->stream->isReadable()) {
+        if (!$this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
-        $handler = $this->stream->getHandler();
+        $handler = $this->getHandler();
 
-        if ($this->stream->isEof() && $handler->getBuffer() === '') {
-            //@phpstan-ignore-next-line
+        if ($this->isEof() && $handler->getBuffer() === '') {
             return $this->createResolvedPromise(null);
         }
 
-        $maxLen = $maxLength ?? $this->stream->getChunkSize();
+        $maxLen = $maxLength ?? $this->getChunkSize();
         $buffer = $handler->getBuffer();
 
         $line = $this->lineHandler->findLineInBuffer($buffer, $maxLen);
         if ($line !== null) {
             $handler->setBuffer($buffer);
-
-            //@phpstan-ignore-next-line
             return $this->createResolvedPromise($line);
         }
 
@@ -118,13 +106,13 @@ class PromiseReadableStream implements PromiseReadableStreamInterface
     /**
      * @inheritdoc
      */
-    public function readAll(int $maxLength = 1048576): CancellablePromiseInterface
+    public function readAllAsync(int $maxLength = 1048576): CancellablePromiseInterface
     {
-        if (! $this->stream->isReadable()) {
+        if (!$this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
-        $handler = $this->stream->getHandler();
+        $handler = $this->getHandler();
         $buffer = $handler->getBuffer();
         $handler->clearBuffer();
 
@@ -134,13 +122,13 @@ class PromiseReadableStream implements PromiseReadableStreamInterface
     /**
      * @inheritdoc
      */
-    public function pipeWithPromise(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
+    public function pipeAsync(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
     {
-        if (! $this->stream->isReadable()) {
+        if (!$this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
-        if (! $destination->isWritable()) {
+        if (!$destination->isWritable()) {
             return $this->createRejectedPromise(new StreamException('Destination is not writable'));
         }
 
@@ -154,7 +142,6 @@ class PromiseReadableStream implements PromiseReadableStreamInterface
 
         // Track data being written
         $dataHandler = function (string $data) use ($destination, &$totalBytes, &$cancelled, &$hasError): void {
-            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled and $hasError are mutable
             if ($cancelled || $hasError) {
                 return;
             }
@@ -163,13 +150,12 @@ class PromiseReadableStream implements PromiseReadableStreamInterface
             $totalBytes += strlen($data);
 
             if (false === $feedMore) {
-                $this->stream->pause();
+                $this->pause();
             }
         };
 
         // When source ends
         $endHandler = function () use ($promise, $destination, $endDestination, &$totalBytes, &$cancelled, &$hasError, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler): void {
-            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled and $hasError are mutable
             if ($cancelled || $hasError) {
                 return;
             }
@@ -188,7 +174,6 @@ class PromiseReadableStream implements PromiseReadableStreamInterface
 
         // When source errors
         $errorHandler = function ($error) use ($promise, $destination, &$cancelled, &$hasError, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler): void {
-            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled and $hasError are mutable
             if ($cancelled || $hasError) {
                 return;
             }
@@ -200,72 +185,55 @@ class PromiseReadableStream implements PromiseReadableStreamInterface
 
         // When destination closes
         $closeHandler = function () use ($promise, $destination, &$cancelled, &$hasError, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler): void {
-            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled and $hasError are mutable
             if ($cancelled || $hasError) {
                 return;
             }
 
             $this->detachPipeHandlers($destination, $dataHandler, $endHandler, $errorHandler, $closeHandler);
 
-            if ($this->stream->isReadable() && ! $this->stream->isEof()) {
+            if ($this->isReadable() && !$this->isEof()) {
                 $hasError = true;
                 $promise->reject(new StreamException('Destination closed before transfer completed'));
             }
         };
 
         // Attach handlers
-        $this->stream->on('data', $dataHandler);
-        $this->stream->on('end', $endHandler);
-        $this->stream->on('error', $errorHandler);
+        $this->on('data', $dataHandler);
+        $this->on('end', $endHandler);
+        $this->on('error', $errorHandler);
         $destination->on('close', $closeHandler);
 
         // Handle drain to resume
         $drainHandler = function () use (&$cancelled, &$hasError): void {
-            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled and $hasError are mutable
             if ($cancelled || $hasError) {
                 return;
             }
-            $this->stream->resume();
+            $this->resume();
         };
         $destination->on('drain', $drainHandler);
 
         $promise->setCancelHandler(function () use (&$cancelled, $destination, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler, &$drainHandler): void {
             $cancelled = true;
-            $this->stream->pause();
+            $this->pause();
             $this->detachPipeHandlers($destination, $dataHandler, $endHandler, $errorHandler, $closeHandler);
             $destination->removeListener('drain', $drainHandler);
         });
 
-        $this->stream->resume();
+        $this->resume();
 
         return $promise;
-    }
-
-    /**
-     * Delegate method calls to the underlying stream.
-     *
-     * @param array<int, mixed> $arguments
-     */
-    public function __call(string $method, array $arguments): mixed
-    {
-        if (method_exists($this->stream, $method)) {
-            // @phpstan-ignore-next-line method.dynamicName
-            return $this->stream->$method(...$arguments);
-        }
-
-        throw new \BadMethodCallException("Method {$method} does not exist");
     }
 
     private function initializeHandlers(): void
     {
         $this->lineHandler = new ReadLineHandler(
-            fn (?int $length) => $this->read($length),
-            fn (string $data) => $this->stream->getHandler()->prependBuffer($data)
+            fn (?int $length) => $this->readAsync($length),
+            fn (string $data) => $this->getHandler()->prependBuffer($data)
         );
 
         $this->allHandler = new ReadAllHandler(
-            $this->stream->getChunkSize(),
-            fn (?int $length) => $this->read($length)
+            $this->getChunkSize(),
+            fn (?int $length) => $this->readAsync($length)
         );
     }
 
@@ -277,13 +245,13 @@ class PromiseReadableStream implements PromiseReadableStreamInterface
         ?callable $closeHandler
     ): void {
         if ($dataHandler !== null) {
-            $this->stream->removeListener('data', $dataHandler);
+            $this->removeListener('data', $dataHandler);
         }
         if ($endHandler !== null) {
-            $this->stream->removeListener('end', $endHandler);
+            $this->removeListener('end', $endHandler);
         }
         if ($errorHandler !== null) {
-            $this->stream->removeListener('error', $errorHandler);
+            $this->removeListener('error', $errorHandler);
         }
         if ($closeHandler !== null) {
             $destination->removeListener('close', $closeHandler);

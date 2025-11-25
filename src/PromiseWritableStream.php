@@ -10,20 +10,19 @@ use Hibla\Stream\Exceptions\StreamException;
 use Hibla\Stream\Interfaces\PromiseWritableStreamInterface;
 use Hibla\Stream\Traits\PromiseHelperTrait;
 
-class PromiseWritableStream implements PromiseWritableStreamInterface
+class PromiseWritableStream extends WritableResourceStream implements PromiseWritableStreamInterface
 {
     use PromiseHelperTrait;
 
-    private WritableResourceStream $stream;
-
     /**
-     * Creates a promise-based wrapper around a WritableStreamResource.
+     * Creates a promise-based writable stream.
      *
-     * @param WritableResourceStream $stream The underlying stream resource
+     * @param resource $resource A writable PHP stream resource
+     * @param int $softLimit The size of the write buffer (in bytes) at which backpressure is applied
      */
-    public function __construct(WritableResourceStream $stream)
+    public function __construct($resource, int $softLimit = 65536)
     {
-        $this->stream = $stream;
+        parent::__construct($resource, $softLimit);
     }
 
     /**
@@ -35,23 +34,15 @@ class PromiseWritableStream implements PromiseWritableStreamInterface
      */
     public static function fromResource($resource, int $softLimit = 65536): self
     {
-        return new self(new WritableResourceStream($resource, $softLimit));
-    }
-
-    /**
-     * Get the underlying stream resource.
-     */
-    public function getWritableStream(): WritableResourceStream
-    {
-        return $this->stream;
+        return new self($resource, $softLimit);
     }
 
     /**
      * @inheritdoc
      */
-    public function write(string $data): CancellablePromiseInterface
+    public function writeAsync(string $data): CancellablePromiseInterface
     {
-        if (! $this->stream->isWritable()) {
+        if (!$this->isWritable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not writable'));
         }
 
@@ -64,56 +55,60 @@ class PromiseWritableStream implements PromiseWritableStreamInterface
         $bytesToWrite = \strlen($data);
         $cancelled = false;
 
-        $handler = $this->stream->getHandler();
-        $initialBufferSize = $handler->getBufferLength();
+        $handler = $this->getHandler();
 
-        // Write the data
-        $writeResult = $this->stream->write($data);
+        // Write the data first using parent's method
+        $writeResult = parent::write($data);
+
+        // Get the buffer size AFTER writing
+        $bufferSizeAfterWrite = $handler->getBufferLength();
 
         // Set up promise resolution
-        $checkWritten = function () use ($promise, $handler, $initialBufferSize, $bytesToWrite, &$cancelled): void {
-            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled is mutable
+        $checkWritten = function () use ($promise, $handler, $bufferSizeAfterWrite, $bytesToWrite, &$cancelled): void {
             if ($cancelled) {
                 return;
             }
 
             $currentBufferSize = $handler->getBufferLength();
-            $written = ($initialBufferSize + $bytesToWrite) - $currentBufferSize;
+            $written = $bufferSizeAfterWrite - $currentBufferSize;
 
             if ($written >= $bytesToWrite) {
                 $promise->resolve($bytesToWrite);
             }
         };
 
-        // If no backpressure, data is buffered immediately
-        if ($writeResult) {
+        // Always wait for drain event - data needs to be flushed to disk
+        $drainHandler = function () use ($checkWritten, &$drainHandler, &$errorHandler): void {
             $checkWritten();
-        } else {
-            // Wait for drain event to resolve
-            $drainHandler = function () use ($checkWritten): void {
-                $checkWritten();
-            };
 
-            $errorHandler = function ($error) use ($promise, &$cancelled, $drainHandler): void {
-                // @phpstan-ignore-next-line phpstan doesn't know that $cancelled is mutable
-                if ($cancelled) {
-                    return;
-                }
-                $this->stream->removeListener('drain', $drainHandler);
-                $promise->reject($error);
-            };
+            // Clean up listeners after checking
+            $this->removeListener('drain', $drainHandler);
+            $this->removeListener('error', $errorHandler);
+        };
 
-            $this->stream->on('drain', $drainHandler);
-            $this->stream->on('error', $errorHandler);
+        $errorHandler = function ($error) use ($promise, &$cancelled, &$drainHandler, &$errorHandler): void {
+            if ($cancelled) {
+                return;
+            }
+            $this->removeListener('drain', $drainHandler);
+            $this->removeListener('error', $errorHandler);
+            $promise->reject($error);
+        };
 
-            $promise->setCancelHandler(function () use (&$cancelled, $drainHandler, $errorHandler): void {
-                $cancelled = true;
-                $this->stream->removeListener('drain', $drainHandler);
-                $this->stream->removeListener('error', $errorHandler);
-            });
+        $this->on('drain', $drainHandler);
+        $this->on('error', $errorHandler);
 
-            // Check immediately in case drain already happened
-            $checkWritten();
+        $promise->setCancelHandler(function () use (&$cancelled, &$drainHandler, &$errorHandler): void {
+            $cancelled = true;
+            $this->removeListener('drain', $drainHandler);
+            $this->removeListener('error', $errorHandler);
+        });
+
+        // Check immediately in case drain already happened (buffer already empty)
+        if ($handler->isFullyDrained()) {
+            $promise->resolve($bytesToWrite);
+            $this->removeListener('drain', $drainHandler);
+            $this->removeListener('error', $errorHandler);
         }
 
         return $promise;
@@ -122,17 +117,17 @@ class PromiseWritableStream implements PromiseWritableStreamInterface
     /**
      * @inheritdoc
      */
-    public function writeLine(string $data): CancellablePromiseInterface
+    public function writeLineAsync(string $data): CancellablePromiseInterface
     {
-        return $this->write($data . "\n");
+        return $this->writeAsync($data . "\n");
     }
 
     /**
      * @inheritdoc
      */
-    public function end(?string $data = null): CancellablePromiseInterface
+    public function endAsync(?string $data = null): CancellablePromiseInterface
     {
-        if ($this->stream->isEnding() || ! $this->stream->isWritable()) {
+        if ($this->isEnding() || !$this->isWritable()) {
             return $this->createResolvedVoidPromise();
         }
 
@@ -141,7 +136,6 @@ class PromiseWritableStream implements PromiseWritableStreamInterface
         $cancelled = false;
 
         $finishHandler = function () use ($promise, &$cancelled): void {
-            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled is mutable
             if ($cancelled) {
                 return;
             }
@@ -149,50 +143,34 @@ class PromiseWritableStream implements PromiseWritableStreamInterface
         };
 
         $errorHandler = function ($error) use ($promise, &$cancelled, $finishHandler): void {
-            // @phpstan-ignore-next-line phpstan doesn't know that $cancelled is mutable
             if ($cancelled) {
                 return;
             }
-            $this->stream->removeListener('finish', $finishHandler);
+            $this->removeListener('finish', $finishHandler);
             $promise->reject($error);
         };
 
-        $this->stream->once('finish', $finishHandler);
-        $this->stream->on('error', $errorHandler);
+        $this->once('finish', $finishHandler);
+        $this->on('error', $errorHandler);
 
         $promise->setCancelHandler(function () use (&$cancelled, $finishHandler, $errorHandler): void {
             $cancelled = true;
-            $this->stream->removeListener('finish', $finishHandler);
-            $this->stream->removeListener('error', $errorHandler);
+            $this->removeListener('finish', $finishHandler);
+            $this->removeListener('error', $errorHandler);
         });
 
-        // Call end on the underlying stream
+        // Call end on parent
         if ($data !== null && $data !== '') {
-            $this->write($data)->then(function () {
-                $this->stream->end();
+            $this->writeAsync($data)->then(function () {
+                parent::end();
             })->catch(function ($error) use ($promise): void {
-                $this->stream->end();
+                parent::end();
                 $promise->reject($error);
             });
         } else {
-            $this->stream->end();
+            parent::end();
         }
 
         return $promise;
-    }
-
-    /**
-     * Delegate method calls to the underlying stream.
-     *
-     * @param array<int, mixed> $arguments
-     */
-    public function __call(string $method, array $arguments): mixed
-    {
-        if (method_exists($this->stream, $method)) {
-            // @phpstan-ignore-next-line method.dynamicName
-            return $this->stream->$method(...$arguments);
-        }
-
-        throw new \BadMethodCallException("Method {$method} does not exist");
     }
 }

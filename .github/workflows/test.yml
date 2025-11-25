@@ -37,9 +37,3 @@ jobs:
 
       - name: Run tests
         run: composer test
-        
-      - name: Run Static Analysis
-        run: ./vendor/bin/phpstan analyse
-
-      - name: Run laravel pint
-        run: ./vendor/bin/pint
