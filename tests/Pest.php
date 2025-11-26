@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-
 function cleanupTempFile(string $file): void
 {
     if (file_exists($file)) {
@@ -66,6 +65,7 @@ function createTempFile(string $content = ''): string
 {
     $file = tempnam(sys_get_temp_dir(), 'test_');
     file_put_contents($file, $content);
+
     return $file;
 }
 

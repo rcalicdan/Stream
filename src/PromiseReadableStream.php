@@ -49,7 +49,7 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
      */
     public function readAsync(?int $length = null): CancellablePromiseInterface
     {
-        if (!$this->isReadable()) {
+        if (! $this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
@@ -79,7 +79,7 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
      */
     public function readLineAsync(?int $maxLength = null): CancellablePromiseInterface
     {
-        if (!$this->isReadable()) {
+        if (! $this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
@@ -95,6 +95,7 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
         $line = $this->lineHandler->findLineInBuffer($buffer, $maxLen);
         if ($line !== null) {
             $handler->setBuffer($buffer);
+
             return $this->createResolvedPromise($line);
         }
 
@@ -108,7 +109,7 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
      */
     public function readAllAsync(int $maxLength = 1048576): CancellablePromiseInterface
     {
-        if (!$this->isReadable()) {
+        if (! $this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
@@ -124,11 +125,11 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
      */
     public function pipeAsync(WritableStreamInterface $destination, array $options = []): CancellablePromiseInterface
     {
-        if (!$this->isReadable()) {
+        if (! $this->isReadable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not readable'));
         }
 
-        if (!$destination->isWritable()) {
+        if (! $destination->isWritable()) {
             return $this->createRejectedPromise(new StreamException('Destination is not writable'));
         }
 
@@ -191,7 +192,7 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
 
             $this->detachPipeHandlers($destination, $dataHandler, $endHandler, $errorHandler, $closeHandler);
 
-            if ($this->isReadable() && !$this->isEof()) {
+            if ($this->isReadable() && ! $this->isEof()) {
                 $hasError = true;
                 $promise->reject(new StreamException('Destination closed before transfer completed'));
             }

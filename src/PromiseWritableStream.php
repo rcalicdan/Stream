@@ -42,7 +42,7 @@ class PromiseWritableStream extends WritableResourceStream implements PromiseWri
      */
     public function writeAsync(string $data): CancellablePromiseInterface
     {
-        if (!$this->isWritable()) {
+        if (! $this->isWritable()) {
             return $this->createRejectedPromise(new StreamException('Stream is not writable'));
         }
 
@@ -127,7 +127,7 @@ class PromiseWritableStream extends WritableResourceStream implements PromiseWri
      */
     public function endAsync(?string $data = null): CancellablePromiseInterface
     {
-        if ($this->isEnding() || !$this->isWritable()) {
+        if ($this->isEnding() || ! $this->isWritable()) {
             return $this->createResolvedVoidPromise();
         }
 

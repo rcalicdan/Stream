@@ -28,11 +28,17 @@ class ReadAllHandler
         $buffer = $initialBuffer;
         $cancelled = false;
 
-        $promise->setCancelHandler(function () use (&$cancelled) {
+        /** @var CancellablePromiseInterface<string|null>|null $currentReadPromise */
+        $currentReadPromise = null;
+
+        $promise->setCancelHandler(function () use (&$cancelled, &$currentReadPromise) {
             $cancelled = true;
+            if ($currentReadPromise !== null) {
+                $currentReadPromise->cancel();
+            }
         });
 
-        $readMore = function () use ($promise, $maxLength, &$buffer, &$readMore, &$cancelled) {
+        $readMore = function () use ($promise, $maxLength, &$buffer, &$readMore, &$cancelled, &$currentReadPromise) {
             if ($cancelled) {
                 return;
             }
@@ -43,11 +49,10 @@ class ReadAllHandler
                 return;
             }
 
-            $readPromise = ($this->readCallback)(min($this->chunkSize, $maxLength - strlen($buffer)));
+            $currentReadPromise = ($this->readCallback)(min($this->chunkSize, $maxLength - strlen($buffer)));
 
-            $readPromise->then(
+            $currentReadPromise->then(
                 function ($data) use ($promise, &$buffer, &$readMore, &$cancelled) {
-                    /** @phpstan-ignore if.alwaysFalse */
                     if ($cancelled) {
                         return;
                     }
@@ -62,7 +67,6 @@ class ReadAllHandler
                     $readMore();
                 }
             )->catch(function ($error) use ($promise, &$cancelled) {
-                /** @phpstan-ignore if.alwaysFalse */
                 if ($cancelled) {
                     return;
                 }
