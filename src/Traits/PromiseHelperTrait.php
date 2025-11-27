@@ -52,4 +52,19 @@ trait PromiseHelperTrait
 
         return $promise;
     }
+
+    /**
+     * Create a resolved promise with string|null value.
+     *
+     * @param string|null $value
+     * @return CancellablePromiseInterface<string|null>
+     */
+    private function createResolvedStringOrNullPromise(?string $value): CancellablePromiseInterface
+    {
+        /** @var CancellablePromise<string|null> $promise */
+        $promise = new CancellablePromise();
+        $promise->resolve($value);
+
+        return $promise;
+    }
 }

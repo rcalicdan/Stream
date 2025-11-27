@@ -54,7 +54,7 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
         }
 
         if ($this->isEof()) {
-            return $this->createResolvedPromise(null);
+            return $this->createResolvedStringOrNullPromise(null);
         }
 
         /** @var CancellablePromise<string|null> $promise */
@@ -86,7 +86,7 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
         $handler = $this->getHandler();
 
         if ($this->isEof() && $handler->getBuffer() === '') {
-            return $this->createResolvedPromise(null);
+            return $this->createResolvedStringOrNullPromise(null);
         }
 
         $maxLen = $maxLength ?? $this->getChunkSize();
@@ -96,7 +96,7 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
         if ($line !== null) {
             $handler->setBuffer($buffer);
 
-            return $this->createResolvedPromise($line);
+            return $this->createResolvedStringOrNullPromise($line);
         }
 
         $handler->clearBuffer();
@@ -143,6 +143,7 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
 
         // Track data being written
         $dataHandler = function (string $data) use ($destination, &$totalBytes, &$cancelled, &$hasError): void {
+            // @phpstan-ignore-next-line php-stan dont know that cancel flag can change in runtime during cancellation
             if ($cancelled || $hasError) {
                 return;
             }
@@ -157,6 +158,7 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
 
         // When source ends
         $endHandler = function () use ($promise, $destination, $endDestination, &$totalBytes, &$cancelled, &$hasError, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler): void {
+            // @phpstan-ignore-next-line php-stan dont know that cancel flag can change in runtime during cancellation
             if ($cancelled || $hasError) {
                 return;
             }
@@ -175,6 +177,7 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
 
         // When source errors
         $errorHandler = function ($error) use ($promise, $destination, &$cancelled, &$hasError, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler): void {
+            // @phpstan-ignore-next-line php-stan dont know that cancel flag can change in runtime during cancellation
             if ($cancelled || $hasError) {
                 return;
             }
@@ -186,6 +189,7 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
 
         // When destination closes
         $closeHandler = function () use ($promise, $destination, &$cancelled, &$hasError, &$dataHandler, &$endHandler, &$errorHandler, &$closeHandler): void {
+            // @phpstan-ignore-next-line php-stan dont know that cancel flag can change in runtime during cancellation
             if ($cancelled || $hasError) {
                 return;
             }
@@ -206,6 +210,7 @@ class PromiseReadableStream extends ReadableResourceStream implements PromiseRea
 
         // Handle drain to resume
         $drainHandler = function () use (&$cancelled, &$hasError): void {
+            // @phpstan-ignore-next-line php-stan dont know that cancel flag can change in runtime during cancellation
             if ($cancelled || $hasError) {
                 return;
             }

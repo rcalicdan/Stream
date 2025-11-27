@@ -49,10 +49,11 @@ class ReadAllHandler
                 return;
             }
 
-            $currentReadPromise = ($this->readCallback)(min($this->chunkSize, $maxLength - strlen($buffer)));
+            $currentReadPromise = ($this->readCallback)(min($this->chunkSize, $maxLength - \strlen($buffer)));
 
             $currentReadPromise->then(
                 function ($data) use ($promise, &$buffer, &$readMore, &$cancelled) {
+                    // @phpstan-ignore-next-line php-stan dont know that cancell flag can change in run time during cancellation
                     if ($cancelled) {
                         return;
                     }
@@ -67,6 +68,7 @@ class ReadAllHandler
                     $readMore();
                 }
             )->catch(function ($error) use ($promise, &$cancelled) {
+                // @phpstan-ignore-next-line php-stan dont know that cancell flag can change in run time during cancellation
                 if ($cancelled) {
                     return;
                 }
